@@ -34,21 +34,42 @@ def fetch_nikkei_spot() -> float:
 
 @st.cache_data(ttl=3600)  # 1時間キャッシュ
 def fetch_japan_rate() -> float:
-    """日本の短期金利（日本10年国債利回り）をYahoo Financeから取得する"""
+    """日本の短期金利を複数ソースから取得する"""
+    # 試すティッカーのリスト（日本短期金利系）
+    tickers = [
+        "%5EJP10YB",   # 日本10年国債
+        "^N6M.T",      # 日本6ヶ月TB
+    ]
+    headers = {"User-Agent": "Mozilla/5.0"}
+
+    for ticker in tickers:
+        try:
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=5d"
+            resp = requests.get(url, headers=headers, timeout=5)
+            data = resp.json()
+            rate = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
+            r = float(rate) / 100
+            if 0 <= r <= 0.05:  # 0〜5%の範囲なら有効
+                return r
+        except Exception:
+            continue
+
+    # 最終手段：日銀サイトから政策金利を取得
     try:
-        # 日本10年国債利回り（^JP10YB）
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EJP10YB?interval=1d&range=5d"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        resp = requests.get(url, headers=headers, timeout=5)
-        data = resp.json()
-        rate = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
-        r = float(rate) / 100  # % → 小数
-        # 異常値チェック（日本金利は通常0〜3%）
-        if 0 <= r <= 0.03:
-            return r
-        return None
+        resp = requests.get(
+            "https://www.boj.or.jp/statistics/money/call/index.htm",
+            headers=headers, timeout=5
+        )
+        import re
+        match = re.search(r'(\d+\.\d+)\s*%', resp.text)
+        if match:
+            r = float(match.group(1)) / 100
+            if 0 <= r <= 0.05:
+                return r
     except Exception:
-        return None
+        pass
+
+    return None
 
 try:
     import pdfplumber
