@@ -388,8 +388,9 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
     fig.add_vline(
         x=spot,
         line_width=2, line_dash="solid", line_color="#f39c12",
-        annotation_text=f"現値 {spot:,.0f}",
+        annotation_text=f"現値<br>{spot:,.0f}",
         annotation_font_color="#f39c12",
+        annotation_font_size=10,
         annotation_position="top right",
     )
 
@@ -398,8 +399,9 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
         fig.add_vline(
             x=gamma_flip,
             line_width=1.5, line_dash="dash", line_color="#f39c12",
-            annotation_text=f"ガンマフリップ {gamma_flip:,.0f}",
+            annotation_text=f"GFlip<br>{gamma_flip:,.0f}",
             annotation_font_color="#f39c12",
+            annotation_font_size=9,
             annotation_position="top left",
         )
 
@@ -407,9 +409,9 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
     pw_y = float(agg.loc[put_wall_idx, "put_gex"]) / unit
     fig.add_annotation(
         x=put_wall, y=pw_y,
-        text=f"▲ プットウォール {put_wall:,.0f}",
+        text=f"▲P壁<br>{put_wall:,.0f}",
         showarrow=False,
-        font=dict(color="#27ae60", size=11),
+        font=dict(color="#27ae60", size=10),
         yanchor="top" if pw_y < 0 else "bottom",
     )
 
@@ -417,9 +419,9 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
     cw_y = float(agg.loc[call_wall_idx, "call_gex"]) / unit
     fig.add_annotation(
         x=call_wall, y=cw_y,
-        text=f"▼ コールウォール {call_wall:,.0f}",
+        text=f"▼C壁<br>{call_wall:,.0f}",
         showarrow=False,
-        font=dict(color="#e74c3c", size=11),
+        font=dict(color="#e74c3c", size=10),
         yanchor="bottom" if cw_y > 0 else "top",
     )
 
@@ -434,32 +436,40 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
 
     fig.update_layout(
         title=dict(
-            text=f"日経225 Gamma Exposure  |  現値: {spot:,.0f}  |  Net GEX: {net_total/unit:.1f} 億円",
-            font=dict(size=15),
+            text=f"日経225 GEX  現値: {spot:,.0f}  Net: {net_total/unit:.1f} 億円",
+            font=dict(size=13),
         ),
         barmode="overlay",
         plot_bgcolor="#0e1117",
         paper_bgcolor="#0e1117",
         font_color="#fafafa",
-        height=560,
+        height=500,
         showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5),
-        margin=dict(b=100),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=-0.30,
+            xanchor="center", x=0.5,
+            font=dict(size=11),
+        ),
+        margin=dict(l=10, r=10, t=50, b=80),
         xaxis=dict(
-            title="行使価格",
+            title=dict(text="行使価格", font=dict(size=11)),
             tickvals=tick_vals,
             ticktext=[f"{v:,}" for v in tick_vals],
-            tickangle=-45,
+            tickangle=-60,
+            tickfont=dict(size=9),
             gridcolor="#1a1a1a",
         ),
         yaxis=dict(
-            title="GEX（億円）",
+            title=dict(text="GEX（億円）", font=dict(size=11)),
+            tickfont=dict(size=9),
             gridcolor="#1a1a1a",
             zeroline=False,
         ),
     )
     fig.update_yaxes(
-        title_text="アグリゲートGEX（億円）",
+        title_text="累積GEX（億円）",
+        title_font=dict(size=11),
+        tickfont=dict(size=9),
         gridcolor="#1a1a2a",
         zeroline=False,
         secondary_y=True,
