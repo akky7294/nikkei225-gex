@@ -31,6 +31,21 @@ def fetch_nikkei_spot() -> float:
     except Exception:
         return None
 
+
+@st.cache_data(ttl=3600)  # 1時間キャッシュ
+def fetch_japan_rate() -> float:
+    """日本の短期金利（10年国債利回り）をYahoo Financeから取得する"""
+    try:
+        # 日本10年国債利回り
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ETNX?interval=1d&range=5d"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        resp = requests.get(url, headers=headers, timeout=5)
+        data = resp.json()
+        rate = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
+        return float(rate) / 100  # % → 小数
+    except Exception:
+        return None
+
 try:
     import pdfplumber
     PDF_AVAILABLE = True
@@ -451,9 +466,16 @@ def main():
             "日経225 現値", min_value=10000, max_value=100000,
             value=default_spot, step=100,
         )
+        live_rate = fetch_japan_rate()
+        if live_rate:
+            st.caption(f"📈 金利: {live_rate*100:.2f}%（自動取得）")
+            default_rate = round(live_rate * 100, 2)
+        else:
+            default_rate = 0.1
+
         risk_free = st.number_input(
             "無リスク金利（%）", min_value=0.0, max_value=5.0,
-            value=0.1, step=0.05,
+            value=default_rate, step=0.05,
         ) / 100
 
         st.divider()
