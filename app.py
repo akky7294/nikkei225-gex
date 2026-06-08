@@ -30,7 +30,6 @@ st.set_page_config(
 # ─── Black-Scholes 関数群 ────────────────────────────────────────────────────
 
 def bs_price(S, K, T, r, sigma, option_type="call"):
-    """Black-Scholes オプション価格"""
     if T <= 0 or sigma <= 0:
         return max(0, S - K) if option_type == "call" else max(0, K - S)
     d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
@@ -42,7 +41,6 @@ def bs_price(S, K, T, r, sigma, option_type="call"):
 
 
 def bs_gamma(S, K, T, r, sigma):
-    """Black-Scholes ガンマ"""
     if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
         return 0.0
     d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
@@ -50,7 +48,6 @@ def bs_gamma(S, K, T, r, sigma):
 
 
 def implied_vol(S, K, T, r, market_price, option_type="call", default=0.20):
-    """清算値からインプライドボラティリティを逆算（brentq法）"""
     if T <= 0 or market_price <= 0:
         return default
     intrinsic = max(0, S - K) if option_type == "call" else max(0, K - S)
@@ -61,10 +58,7 @@ def implied_vol(S, K, T, r, market_price, option_type="call", default=0.20):
             lambda s: bs_price(S, K, T, r, s, option_type) - market_price,
             1e-6, 5.0, xtol=1e-5, maxiter=100
         )
-        # 異常値を除外
-        if iv < 0.01 or iv > 5.0:
-            return default
-        return iv
+        return iv if 0.01 <= iv <= 5.0 else default
     except Exception:
         return default
 
@@ -72,14 +66,7 @@ def implied_vol(S, K, T, r, market_price, option_type="call", default=0.20):
 # ─── GEX計算 ─────────────────────────────────────────────────────────────────
 
 def calculate_gex(df: pd.DataFrame, spot: float, r: float = 0.001) -> pd.DataFrame:
-    """
-    オプションチェーンDFからストライク別GEXを計算する
-    GEX = Gamma × OI × 乗数 × Spot²
-    Call: +GEX（ディーラーLong Gamma）
-    Put:  -GEX（ディーラーShort Gamma）
-    """
-    MULTIPLIER = 1000  # 日経225オプション乗数
-
+    MULTIPLIER = 1000
     records = []
     for _, row in df.iterrows():
         T = row["days_to_expiry"] / 365.0
@@ -91,29 +78,23 @@ def calculate_gex(df: pd.DataFrame, spot: float, r: float = 0.001) -> pd.DataFra
             "expiry": row["expiry"],
             "type": row["type"],
             "gex": sign * gex,
+            "call_gex": gex if row["type"] == "call" else 0,
+            "put_gex": -gex if row["type"] == "put" else 0,
             "gamma": gamma,
             "oi": row["oi"],
             "iv": row["iv"],
         })
-
     return pd.DataFrame(records)
 
 
 # ─── JPX PDF パーサー ─────────────────────────────────────────────────────────
 
 def parse_jpx_pdf(raw: bytes, today: date, spot: float, r: float) -> pd.DataFrame:
-    """
-    JPX日次相場表PDF（siop_dyr_YYYYMMDD.pdf）をパースする
-    清算値カラムからIVを逆算する
-    """
     if not PDF_AVAILABLE:
         st.error("pdfplumberが必要です。")
         return pd.DataFrame()
 
-    row_pattern = re.compile(
-        r'(20\d{4})\s+(\d{2}\.\d{2})\s+([\d,]+)\s+\d{6,12}(.*)'
-    )
-
+    row_pattern = re.compile(r'(20\d{4})\s+(\d{2}\.\d{2})\s+([\d,]+)\s+\d{6,12}(.*)')
     records = []
     current_type = None
 
@@ -131,7 +112,6 @@ def parse_jpx_pdf(raw: bytes, today: date, spot: float, r: float) -> pd.DataFram
                 m = row_pattern.match(line.strip())
                 if not m:
                     continue
-
                 contract_ym = m.group(1)
                 exp_md = m.group(2)
                 strike_str = m.group(3).replace(",", "")
@@ -142,7 +122,6 @@ def parse_jpx_pdf(raw: bytes, today: date, spot: float, r: float) -> pd.DataFram
                 except ValueError:
                     continue
 
-                # OI（最終トークン）
                 oi = 0
                 for token in reversed(rest):
                     clean = token.replace(",", "")
@@ -152,18 +131,15 @@ def parse_jpx_pdf(raw: bytes, today: date, spot: float, r: float) -> pd.DataFram
                 if oi == 0:
                     continue
 
-                # 清算値（後ろから3番目）
                 settlement = 0.0
                 if len(rest) >= 3:
-                    seisan_str = rest[-3].replace(",", "")
                     try:
-                        v = float(seisan_str)
+                        v = float(rest[-3].replace(",", ""))
                         if v > 0:
                             settlement = v
                     except ValueError:
                         pass
 
-                # 満期日
                 year = int(contract_ym[:4])
                 try:
                     exp_month = int(exp_md.split(".")[0])
@@ -176,12 +152,8 @@ def parse_jpx_pdf(raw: bytes, today: date, spot: float, r: float) -> pd.DataFram
                 if days <= 0:
                     continue
 
-                # IV計算
                 T = days / 365.0
-                if settlement > 0:
-                    iv = implied_vol(spot, strike, T, r, settlement, current_type)
-                else:
-                    iv = 0.20
+                iv = implied_vol(spot, strike, T, r, settlement, current_type) if settlement > 0 else 0.20
 
                 records.append({
                     "strike": strike,
@@ -202,7 +174,7 @@ def parse_jpx_pdf(raw: bytes, today: date, spot: float, r: float) -> pd.DataFram
     st.success(
         f"PDF読み込み完了: {len(df)}行 "
         f"（Call:{len(df[df.type=='call'])} / Put:{len(df[df.type=='put'])}）"
-        f"  |  IV実測: {n_iv}行 / IV推定(20%): {len(df)-n_iv}行"
+        f"  IV実測: {n_iv}行 / 推定: {len(df)-n_iv}行"
     )
     return df
 
@@ -217,11 +189,9 @@ def generate_demo_data(spot: float, today: date) -> pd.DataFrame:
         500,
     )
     expiries_days = [14, 42, 77]
-
     rows = []
     for days in expiries_days:
         expiry = pd.Timestamp(today) + pd.Timedelta(days=days)
-        T = days / 365
         atm_iv = 0.20
         for strike in strikes:
             moneyness = strike / spot
@@ -231,121 +201,214 @@ def generate_demo_data(spot: float, today: date) -> pd.DataFrame:
             put_oi = int(np.exp(-3 * max(0, 1.0 - moneyness)**2) * 5000 * np.random.uniform(0.7, 1.3))
             rows.append({"strike": strike, "expiry": expiry, "type": "call", "oi": call_oi, "iv": iv, "days_to_expiry": days})
             rows.append({"strike": strike, "expiry": expiry, "type": "put", "oi": put_oi, "iv": iv, "days_to_expiry": days})
-
     return pd.DataFrame(rows)
 
 
-# ─── チャート描画 ─────────────────────────────────────────────────────────────
+# ─── メインチャート描画 ───────────────────────────────────────────────────────
 
 def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_threshold: int):
-    """GEXバーチャートを構築する"""
+    """
+    Tiger Brokers風GEXチャート:
+    - コール(赤バー) / プット(緑バー) を別々に表示
+    - アグリゲートGEX累積ライン(青・右軸)
+    - プットウォール / コールウォール ラベル
+    - 正ゾーン(緑背景) / 負ゾーン(赤背景)
+    - ガンマフリップライン
+    """
+    # データ集計
     if selected_expiry == "全満期合算":
-        plot_df = gex_df.groupby("strike", as_index=False).agg(
-            gex=("gex", "sum"), oi=("oi", "sum")
+        agg = gex_df.groupby("strike", as_index=False).agg(
+            call_gex=("call_gex", "sum"),
+            put_gex=("put_gex", "sum"),
+            gex=("gex", "sum"),
+            oi=("oi", "sum"),
         )
     else:
         filtered = gex_df[gex_df["expiry"] == selected_expiry]
-        plot_df = filtered.groupby("strike", as_index=False).agg(
-            gex=("gex", "sum"), oi=("oi", "sum")
+        agg = filtered.groupby("strike", as_index=False).agg(
+            call_gex=("call_gex", "sum"),
+            put_gex=("put_gex", "sum"),
+            gex=("gex", "sum"),
+            oi=("oi", "sum"),
         )
 
-    # 現値±25%の範囲 + OIフィルター
-    plot_df = plot_df[
-        (plot_df["strike"] >= spot * 0.75) &
-        (plot_df["strike"] <= spot * 1.25) &
-        (plot_df["oi"] >= oi_threshold)
-    ].sort_values("strike")
+    # 現値±25%・OIフィルター
+    agg = agg[
+        (agg["strike"] >= spot * 0.75) &
+        (agg["strike"] <= spot * 1.25) &
+        (agg["oi"] >= oi_threshold)
+    ].sort_values("strike").reset_index(drop=True)
 
-    if plot_df.empty:
-        return None, 0, None
+    if agg.empty:
+        return None, 0, None, None, None
 
-    net_total = plot_df["gex"].sum()
-    gamma_flip = _find_gamma_flip(plot_df)
+    # アグリゲートGEX（累積）
+    agg["agg_gex"] = agg["gex"].cumsum()
 
-    # GEXを億円単位に変換
-    y = plot_df["gex"] / 1e8
-    colors = ["#2ecc71" if v >= 0 else "#e74c3c" for v in y]
+    # ガンマフリップ（累積GEXがゼロ交差する点）
+    gamma_flip = None
+    for i in range(1, len(agg)):
+        if agg["agg_gex"].iloc[i - 1] * agg["agg_gex"].iloc[i] < 0:
+            gamma_flip = int(agg["strike"].iloc[i])
+            break
 
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=plot_df["strike"],
-        y=y,
-        marker_color=colors,
-        name="Net GEX",
-        hovertemplate=(
-            "<b>Strike: %{x:,.0f}</b><br>"
-            "GEX: %{y:.1f} 億円<br>"
-            "<extra></extra>"
+    # プットウォール（最大プットGEX絶対値）
+    put_wall_idx = agg["put_gex"].abs().idxmax()
+    put_wall = int(agg.loc[put_wall_idx, "strike"])
+
+    # コールウォール（最大コールGEX）
+    call_wall_idx = agg["call_gex"].idxmax()
+    call_wall = int(agg.loc[call_wall_idx, "strike"])
+
+    net_total = agg["gex"].sum()
+    unit = 1e8  # 億円
+
+    # ─── Figure（2軸）───
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    strikes = agg["strike"].tolist()
+
+    # ── 背景ゾーン（正=薄緑, 負=薄赤）──
+    flip_idx = None
+    if gamma_flip is not None:
+        flip_idx = agg[agg["strike"] == gamma_flip].index[0] if gamma_flip in agg["strike"].values else None
+
+    # 正ゾーン
+    pos_zone = agg[agg["agg_gex"] >= 0]
+    neg_zone = agg[agg["agg_gex"] < 0]
+
+    for zone_df, fillcolor in [(pos_zone, "rgba(46,204,113,0.08)"), (neg_zone, "rgba(231,76,60,0.08)")]:
+        if not zone_df.empty:
+            x0 = zone_df["strike"].min() - 125
+            x1 = zone_df["strike"].max() + 125
+            fig.add_vrect(
+                x0=x0, x1=x1,
+                fillcolor=fillcolor,
+                layer="below",
+                line_width=0,
+            )
+
+    # ── プットGEX バー（緑）──
+    fig.add_trace(
+        go.Bar(
+            x=agg["strike"],
+            y=agg["put_gex"] / unit,
+            name="プット GEX",
+            marker_color="#27ae60",
+            opacity=0.85,
+            hovertemplate="Strike: %{x:,.0f}<br>Put GEX: %{y:.1f} 億円<extra></extra>",
         ),
-    ))
+        secondary_y=False,
+    )
 
-    # 現値ライン
+    # ── コールGEX バー（赤）──
+    fig.add_trace(
+        go.Bar(
+            x=agg["strike"],
+            y=agg["call_gex"] / unit,
+            name="コール GEX",
+            marker_color="#e74c3c",
+            opacity=0.85,
+            hovertemplate="Strike: %{x:,.0f}<br>Call GEX: %{y:.1f} 億円<extra></extra>",
+        ),
+        secondary_y=False,
+    )
+
+    # ── アグリゲートGEX ライン（青・右軸）──
+    fig.add_trace(
+        go.Scatter(
+            x=agg["strike"],
+            y=agg["agg_gex"] / unit,
+            name="アグリゲートGEX",
+            mode="lines",
+            line=dict(color="#3498db", width=2),
+            hovertemplate="Strike: %{x:,.0f}<br>Aggregate GEX: %{y:.1f} 億円<extra></extra>",
+        ),
+        secondary_y=True,
+    )
+
+    # ── 現値ライン ──
     fig.add_vline(
-        x=spot, line_width=2.5, line_dash="solid", line_color="#f39c12",
+        x=spot,
+        line_width=2, line_dash="solid", line_color="#f39c12",
         annotation_text=f"現値 {spot:,.0f}",
         annotation_font_color="#f39c12",
         annotation_position="top right",
     )
 
-    # Gamma Flip ライン
-    if gamma_flip is not None:
+    # ── ガンマフリップライン ──
+    if gamma_flip:
         fig.add_vline(
-            x=gamma_flip, line_width=1.5, line_dash="dash", line_color="#9b59b6",
-            annotation_text=f"Gamma Flip {gamma_flip:,.0f}",
-            annotation_font_color="#9b59b6",
+            x=gamma_flip,
+            line_width=1.5, line_dash="dash", line_color="#f39c12",
+            annotation_text=f"ガンマフリップ {gamma_flip:,.0f}",
+            annotation_font_color="#f39c12",
             annotation_position="top left",
         )
 
-    # ゼロライン強調
-    fig.add_hline(y=0, line_width=1, line_color="#555")
+    # ── プットウォール ──
+    pw_y = float(agg.loc[put_wall_idx, "put_gex"]) / unit
+    fig.add_annotation(
+        x=put_wall, y=pw_y,
+        text=f"▲ プットウォール {put_wall:,.0f}",
+        showarrow=False,
+        font=dict(color="#27ae60", size=11),
+        yanchor="top" if pw_y < 0 else "bottom",
+    )
 
-    # x軸ティックを500刻みに
-    x_min = int(plot_df["strike"].min())
-    x_max = int(plot_df["strike"].max())
-    tick_vals = list(range(
-        round(x_min / 500) * 500,
-        round(x_max / 500) * 500 + 500,
-        500
-    ))
+    # ── コールウォール ──
+    cw_y = float(agg.loc[call_wall_idx, "call_gex"]) / unit
+    fig.add_annotation(
+        x=call_wall, y=cw_y,
+        text=f"▼ コールウォール {call_wall:,.0f}",
+        showarrow=False,
+        font=dict(color="#e74c3c", size=11),
+        yanchor="bottom" if cw_y > 0 else "top",
+    )
+
+    # ── ゼロライン ──
+    fig.add_hline(y=0, line_width=1, line_color="#555", secondary_y=False)
+    fig.add_hline(y=0, line_width=0.5, line_color="#334", line_dash="dot", secondary_y=True)
+
+    # x軸ティック
+    x_min = int(agg["strike"].min())
+    x_max = int(agg["strike"].max())
+    tick_vals = list(range(round(x_min / 500) * 500, round(x_max / 500) * 500 + 500, 500))
 
     fig.update_layout(
         title=dict(
-            text=f"日経225 Gamma Exposure  |  現値: {spot:,.0f}  |  Net GEX: {net_total/1e8:.1f} 億円",
+            text=f"日経225 Gamma Exposure  |  現値: {spot:,.0f}  |  Net GEX: {net_total/unit:.1f} 億円",
             font=dict(size=15),
         ),
+        barmode="overlay",
+        plot_bgcolor="#0e1117",
+        paper_bgcolor="#0e1117",
+        font_color="#fafafa",
+        height=560,
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5),
+        margin=dict(b=100),
         xaxis=dict(
             title="行使価格",
             tickvals=tick_vals,
             ticktext=[f"{v:,}" for v in tick_vals],
             tickangle=-45,
-            gridcolor="#2a2a2a",
+            gridcolor="#1a1a1a",
         ),
         yaxis=dict(
-            title="Gamma Exposure（億円）",
-            gridcolor="#2a2a2a",
+            title="GEX（億円）",
+            gridcolor="#1a1a1a",
             zeroline=False,
         ),
-        plot_bgcolor="#0e1117",
-        paper_bgcolor="#0e1117",
-        font_color="#fafafa",
-        height=540,
-        showlegend=False,
-        bargap=0.15,
-        margin=dict(b=80),
+    )
+    fig.update_yaxes(
+        title_text="アグリゲートGEX（億円）",
+        gridcolor="#1a1a2a",
+        zeroline=False,
+        secondary_y=True,
     )
 
-    return fig, net_total, gamma_flip
-
-
-def _find_gamma_flip(plot_df: pd.DataFrame):
-    """累積GEXがゼロを交差するストライクを返す"""
-    sorted_df = plot_df.sort_values("strike")
-    cumsum = sorted_df["gex"].cumsum().values
-    strikes = sorted_df["strike"].values
-    for i in range(1, len(cumsum)):
-        if cumsum[i - 1] * cumsum[i] < 0:
-            return int(strikes[i])
-    return None
+    return fig, net_total, gamma_flip, put_wall, call_wall
 
 
 # ─── Streamlit UI ─────────────────────────────────────────────────────────────
@@ -419,28 +482,29 @@ def main():
     selected_label = st.selectbox("満期日フィルター", expiry_labels)
     selected_expiry = "全満期合算" if selected_label == "全満期合算" else expiries[expiry_labels.index(selected_label) - 1]
 
-    # チャート
+    # チャート描画
     result = build_gex_chart(gex_df, spot, selected_expiry, oi_threshold)
-    fig, net_total, gamma_flip = result
+    fig, net_total, gamma_flip, put_wall, call_wall = result
 
-    # KPI
-    col1, col2, col3, col4 = st.columns(4)
+    # KPIメトリクス
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric(
         "Net GEX", f"{net_total/1e8:.1f} 億円",
-        delta="正 = ディーラー Long Gamma" if net_total > 0 else "負 = ディーラー Short Gamma"
+        delta="Long Gamma" if net_total > 0 else "Short Gamma"
     )
     col2.metric("現値", f"{spot:,.0f}")
-    col3.metric("Gamma Flip", f"{gamma_flip:,.0f}" if gamma_flip else "N/A")
-    col4.metric("対象満期数", len(expiries))
+    col3.metric("ガンマフリップ", f"{gamma_flip:,.0f}" if gamma_flip else "N/A")
+    col4.metric("プットウォール", f"{put_wall:,.0f}" if put_wall else "N/A")
+    col5.metric("コールウォール", f"{call_wall:,.0f}" if call_wall else "N/A")
 
     if fig:
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("表示できるデータがありません。OIフィルターを下げるか、現値を調整してください。")
+        st.warning("表示できるデータがありません。OIフィルターを下げるか現値を調整してください。")
 
-    # IV分布（実データ時のみ）
+    # IVスマイル（実データ時のみ）
     if "settlement" in options_df.columns:
-        with st.expander("📈 インプライドボラティリティ分布（スマイル）"):
+        with st.expander("📈 インプライドボラティリティ スマイル"):
             iv_df = options_df[
                 (options_df["strike"] >= spot * 0.75) &
                 (options_df["strike"] <= spot * 1.25) &
@@ -448,11 +512,12 @@ def main():
             ].copy()
             if not iv_df.empty:
                 fig_iv = go.Figure()
-                for opt_type, color in [("call", "#2ecc71"), ("put", "#e74c3c")]:
+                for opt_type, color in [("call", "#e74c3c"), ("put", "#27ae60")]:
                     d = iv_df[iv_df["type"] == opt_type].sort_values("strike")
                     fig_iv.add_trace(go.Scatter(
                         x=d["strike"], y=d["iv"] * 100,
-                        mode="lines+markers", name=opt_type.capitalize(),
+                        mode="lines+markers",
+                        name=f"{'コール' if opt_type=='call' else 'プット'}",
                         line=dict(color=color),
                         hovertemplate="Strike: %{x:,.0f}<br>IV: %{y:.1f}%<extra></extra>",
                     ))
@@ -460,7 +525,7 @@ def main():
                     title="IVスマイル（清算値より算出）",
                     xaxis_title="行使価格", yaxis_title="IV (%)",
                     plot_bgcolor="#0e1117", paper_bgcolor="#0e1117",
-                    font_color="#fafafa", height=380,
+                    font_color="#fafafa", height=350,
                     xaxis=dict(gridcolor="#2a2a2a"),
                     yaxis=dict(gridcolor="#2a2a2a"),
                 )
@@ -472,22 +537,29 @@ def main():
 
 オプション市場において、ディーラー（マーケットメーカー）が保有するガンマポジションの総量をストライク別に可視化したものです。
 
-| GEX | 意味 | 相場への影響 |
-|-----|------|------------|
-| **正（緑）** | ディーラーが Long Gamma | 現値の変動を**抑制**（戻り売り・押し目買い） |
-| **負（赤）** | ディーラーが Short Gamma | 現値の変動を**増幅**（トレンドフォロー） |
-
-**Gamma Flip Point（紫線）**
-正負が逆転するストライク。現値がここを下回るとボラティリティ特性が変わる可能性があります。
+| 指標 | 意味 |
+|------|------|
+| **コールGEX（赤）** | そのストライクのコールOIによるGEX |
+| **プットGEX（緑）** | そのストライクのプットOIによるGEX |
+| **アグリゲートGEX（青線）** | ストライクを低い方から累積したNet GEX |
+| **ガンマフリップ** | 累積GEXがゼロを交差するストライク。現値がここを下回ると相場の性質が変わりやすい |
+| **プットウォール** | プットGEXが最大のストライク＝下値支持として機能しやすい |
+| **コールウォール** | コールGEXが最大のストライク＝上値抵抗として機能しやすい |
 
 > OIベースのため日中変化は捕捉できません。他シグナルと組み合わせて参照してください。
         """)
 
-    with st.expander("📋 生データ（ストライク別Net GEX）"):
-        summary = gex_df.groupby("strike")["gex"].sum().reset_index()
-        summary["gex_億円"] = (summary["gex"] / 1e8).round(2)
-        summary = summary.sort_values("gex_億円", ascending=False).reset_index(drop=True)
-        st.dataframe(summary[["strike", "gex_億円"]], use_container_width=True)
+    with st.expander("📋 生データ（ストライク別GEX）"):
+        summary = gex_df.groupby("strike").agg(
+            call_gex=("call_gex", "sum"),
+            put_gex=("put_gex", "sum"),
+            net_gex=("gex", "sum"),
+        ).reset_index()
+        summary["call_億円"] = (summary["call_gex"] / 1e8).round(1)
+        summary["put_億円"] = (summary["put_gex"] / 1e8).round(1)
+        summary["net_億円"] = (summary["net_gex"] / 1e8).round(1)
+        summary = summary.sort_values("net_億円", ascending=False).reset_index(drop=True)
+        st.dataframe(summary[["strike", "call_億円", "put_億円", "net_億円"]], use_container_width=True)
 
 
 def _show_jpx_guide():
