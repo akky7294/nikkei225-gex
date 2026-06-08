@@ -284,6 +284,11 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry=None):
             "strike", as_index=False
         )["gex"].sum()
 
+    # 現値±30%の範囲に絞る
+    plot_df = plot_df[
+        (plot_df["strike"] >= spot * 0.70) &
+        (plot_df["strike"] <= spot * 1.30)
+    ]
     plot_df = plot_df.sort_values("strike")
     plot_df["color"] = plot_df["gex"].apply(lambda x: "#2ecc71" if x > 0 else "#e74c3c")
 
