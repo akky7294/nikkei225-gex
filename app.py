@@ -12,9 +12,24 @@ from scipy.stats import norm
 from scipy.optimize import brentq
 import io
 import re
+import requests
 from datetime import date
 from pathlib import Path
 import zipfile
+
+
+@st.cache_data(ttl=60)  # 1分キャッシュ
+def fetch_nikkei_spot() -> float:
+    """Yahoo FinanceからリアルタイムのNikkei225現値を取得する"""
+    try:
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?interval=1m&range=1d"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        resp = requests.get(url, headers=headers, timeout=5)
+        data = resp.json()
+        price = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
+        return float(price)
+    except Exception:
+        return None
 
 try:
     import pdfplumber
@@ -422,9 +437,19 @@ def main():
 
     with st.sidebar:
         st.header("設定")
+
+        # リアルタイム現値取得
+        live_spot = fetch_nikkei_spot()
+        if live_spot:
+            st.caption(f"🔴 LIVE: ¥{live_spot:,.0f}（1分ごと更新）")
+            default_spot = int(live_spot)
+        else:
+            st.caption("現値を手動入力してください")
+            default_spot = 38500
+
         spot = st.number_input(
-            "日経225 現値", min_value=10000, max_value=60000,
-            value=38500, step=100,
+            "日経225 現値", min_value=10000, max_value=100000,
+            value=default_spot, step=100,
         )
         risk_free = st.number_input(
             "無リスク金利（%）", min_value=0.0, max_value=5.0,
