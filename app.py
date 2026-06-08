@@ -13,6 +13,7 @@ from scipy.optimize import brentq
 import io
 import re
 from datetime import date
+from pathlib import Path
 import zipfile
 
 try:
@@ -439,13 +440,30 @@ def main():
 
         st.divider()
         st.subheader("データソース")
-        data_mode = st.radio("モード選択", ["デモデータ", "JPX PDFアップロード"])
+        data_mode = st.radio("モード選択", ["最新データ（自動）", "JPX PDFアップロード", "デモデータ"])
 
         options_df = pd.DataFrame()
 
         if data_mode == "デモデータ":
             st.info("合成データでデモ表示します。")
             options_df = generate_demo_data(spot, today)
+
+        elif data_mode == "最新データ（自動）":
+            csv_path = Path("data/latest.csv")
+            if csv_path.exists():
+                options_df = pd.read_csv(csv_path, parse_dates=["expiry"])
+                data_date = options_df["date"].iloc[0] if "date" in options_df.columns else "不明"
+                st.success(f"最新データ読み込み済み（{data_date}）")
+                # days_to_expiry を再計算
+                options_df["days_to_expiry"] = (
+                    pd.to_datetime(options_df["expiry"]).dt.date.apply(
+                        lambda d: (d - today).days
+                    )
+                )
+                options_df = options_df[options_df["days_to_expiry"] > 0]
+            else:
+                st.warning("data/latest.csv がまだありません。ZIPをアップロードして処理してください。")
+
         else:
             uploaded = st.file_uploader(
                 "JPX日次相場表をアップロード",

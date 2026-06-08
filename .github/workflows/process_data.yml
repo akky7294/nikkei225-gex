@@ -1,0 +1,44 @@
+name: Process JPX Data
+
+on:
+  # inputフォルダにZIPがpushされたとき自動実行
+  push:
+    paths:
+      - 'input/Daily_Report_OSE_*.zip'
+  # 手動実行ボタン
+  workflow_dispatch:
+    inputs:
+      spot:
+        description: '日経225現値（例: 38500）'
+        required: false
+        default: '38500'
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pdfplumber pandas scipy
+
+      - name: Find latest ZIP and process
+        run: |
+          SPOT="${{ github.event.inputs.spot || '38500' }}"
+          python fetch_data.py --auto --spot $SPOT --out data/latest.csv
+
+      - name: Commit processed data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/latest.csv data/archive/
+          git diff --staged --quiet || git commit -m "Auto: update GEX data $(date '+%Y-%m-%d')"
+          git push
