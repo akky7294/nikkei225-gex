@@ -1,10 +1,9 @@
-name: Process JPX Data
+name: 日次GEXデータ自動更新
 
 on:
-  # inputフォルダにZIPがpushされたとき自動実行
-  push:
-    paths:
-      - 'input/Daily_Report_OSE_*.zip'
+  # 毎営業日 朝8時（JST）に自動実行
+  schedule:
+    - cron: '0 23 * * 1-5'  # UTC 23:00 = JST 8:00 月〜金
   # 手動実行ボタン
   workflow_dispatch:
     inputs:
@@ -12,9 +11,13 @@ on:
         description: '日経225現値（例: 38500）'
         required: false
         default: '38500'
+      date:
+        description: '取得日付（例: 20260605）空白=前営業日'
+        required: false
+        default: ''
 
 jobs:
-  process:
+  fetch-and-process:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,18 +30,67 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          pip install pdfplumber pandas scipy
+        run: pip install pdfplumber pandas scipy requests
 
-      - name: Find latest ZIP and process
+      - name: Download JPX ZIP and process
+        run: |
+          python - <<'PYEOF'
+          import requests, zipfile, io, sys, os
+          from datetime import date, timedelta
+
+          # 日付決定
+          target_date = os.environ.get("TARGET_DATE", "").strip()
+          if not target_date:
+              # 前営業日を探す（最大5日前まで）
+              d = date.today() - timedelta(days=1)
+              for _ in range(5):
+                  if d.weekday() < 5:  # 月〜金
+                      break
+                  d -= timedelta(days=1)
+              target_date = d.strftime("%Y%m%d")
+
+          yyyymm = target_date[:6]
+          url = f"https://www.jpx.co.jp/automation/markets/statistics-derivatives/daily/files/{yyyymm}/Daily_Report_OSE_{target_date}.zip"
+          print(f"Downloading: {url}")
+
+          headers = {"User-Agent": "Mozilla/5.0"}
+          resp = requests.get(url, headers=headers, timeout=30)
+
+          if resp.status_code != 200:
+              print(f"Failed: HTTP {resp.status_code}")
+              sys.exit(1)
+
+          print(f"Downloaded {len(resp.content):,} bytes")
+
+          # ZIPからsiop PDFを取り出す
+          with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+              pdf_files = [n for n in zf.namelist() if "siop" in n.lower() and n.endswith(".pdf")]
+              if not pdf_files:
+                  print("siop PDF not found in ZIP")
+                  sys.exit(1)
+              print(f"Using: {pdf_files[0]}")
+              raw_pdf = zf.read(pdf_files[0])
+
+          # PDFをdata/temp.pdfに保存
+          with open("data/temp.pdf", "wb") as f:
+              f.write(raw_pdf)
+          print(f"PDF saved ({len(raw_pdf):,} bytes)")
+          PYEOF
+        env:
+          TARGET_DATE: ${{ github.event.inputs.date }}
+
+      - name: Parse PDF to CSV
         run: |
           SPOT="${{ github.event.inputs.spot || '38500' }}"
-          python fetch_data.py --auto --spot $SPOT --out data/latest.csv
+          python fetch_data.py --pdf data/temp.pdf --spot $SPOT --out data/latest.csv
 
-      - name: Commit processed data
+      - name: Cleanup temp PDF
+        run: rm -f data/temp.pdf
+
+      - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/latest.csv data/archive/
-          git diff --staged --quiet || git commit -m "Auto: update GEX data $(date '+%Y-%m-%d')"
+          git diff --staged --quiet || git commit -m "Auto: GEX data $(date '+%Y-%m-%d')"
           git push
