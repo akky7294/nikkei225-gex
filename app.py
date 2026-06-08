@@ -475,7 +475,7 @@ def main():
             st.caption(f"📈 金利: {live_rate*100:.2f}%（自動取得）")
             default_rate = round(live_rate * 100, 2)
         else:
-            default_rate = 0.1
+            default_rate = 0.75  # 日銀政策金利ベースのデフォルト値
 
         risk_free = st.number_input(
             "無リスク金利（%）", min_value=0.0, max_value=5.0,
