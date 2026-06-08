@@ -10,9 +10,16 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.stats import norm
 import io
+import re
 import requests
 from datetime import datetime, date
 import zipfile
+
+try:
+    import pdfplumber
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
 
 st.set_page_config(
     page_title="日経225 Gamma Exposure",
@@ -63,6 +70,89 @@ def calculate_gex(df: pd.DataFrame, spot: float, r: float = 0.001) -> pd.DataFra
 
 
 # ─── JPXデータ読み込み ──────────────────────────────────────────────────────
+
+def parse_jpx_pdf(raw: bytes, today: date) -> pd.DataFrame:
+    """
+    JPX日次相場表PDF（siop_dyr_YYYYMMDD.pdf）をパースしてオプションチェーンDFを返す
+    ページのテキストから PutOptions / CallOptions のセクションを検出し、
+    各行の 限月・行使価格・建玉 を正規表現で抽出する
+    """
+    if not PDF_AVAILABLE:
+        st.error("pdfplumberが必要です。requirements.txtにpdfplumberを追加してください。")
+        return pd.DataFrame()
+
+    row_pattern = re.compile(
+        r'(20\d{4})\s+(\d{2}\.\d{2})\s+([\d,]+)\s+\d{6,12}(.*)'
+    )
+
+    records = []
+    current_type = None
+
+    with pdfplumber.open(io.BytesIO(raw)) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text() or ""
+            if "PutOptions" in text:
+                current_type = "put"
+            if "CallOptions" in text:
+                current_type = "call"
+            if current_type is None:
+                continue
+
+            for line in text.split("\n"):
+                m = row_pattern.match(line.strip())
+                if not m:
+                    continue
+                contract_ym = m.group(1)   # e.g. 202606
+                exp_md = m.group(2)         # e.g. 06.11
+                strike_str = m.group(3).replace(",", "")
+                rest = m.group(4).strip().split()
+
+                try:
+                    strike = int(strike_str)
+                except ValueError:
+                    continue
+
+                # 建玉(OI)は最後の数値フィールド
+                oi = 0
+                for token in reversed(rest):
+                    clean = token.replace(",", "")
+                    if re.fullmatch(r'\d+', clean):
+                        oi = int(clean)
+                        break
+
+                if oi == 0:
+                    continue
+
+                # 満期日を組み立て: contract_ym=202606, exp_md=06.11 → 2026-06-11
+                year = int(contract_ym[:4])
+                exp_month = int(exp_md.split(".")[0])
+                exp_day = int(exp_md.split(".")[1])
+                try:
+                    expiry = date(year, exp_month, exp_day)
+                except ValueError:
+                    continue
+
+                days = (expiry - today).days
+                if days <= 0:
+                    continue
+
+                records.append({
+                    "strike": strike,
+                    "expiry": pd.Timestamp(expiry),
+                    "type": current_type,
+                    "oi": oi,
+                    "iv": 0.20,
+                    "days_to_expiry": days,
+                })
+
+    if not records:
+        st.error("PDFからデータを抽出できませんでした。siop_dyr_*.pdf ファイルか確認してください。")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(records)
+    st.success(f"PDF読み込み完了: {len(df)}行（Call:{len(df[df.type=='call'])} / Put:{len(df[df.type=='put'])}）")
+    return df
+
 
 def parse_jpx_csv(raw: bytes) -> pd.DataFrame:
     """
@@ -302,24 +392,23 @@ def main():
 
         else:
             uploaded = st.file_uploader(
-                "オプションCSVをアップロード",
-                type=["csv", "zip"],
-                help="JPX公式の日次オプション取引状況CSVに対応",
+                "JPX日次相場表をアップロード",
+                type=["pdf", "zip"],
+                help="JPX公式の日次相場表ZIP（siop_dyr_*.pdf を含む）またはPDFを直接",
             )
             if uploaded:
                 raw = uploaded.read()
                 if uploaded.name.endswith(".zip"):
                     with zipfile.ZipFile(io.BytesIO(raw)) as zf:
-                        csv_files = [n for n in zf.namelist() if n.endswith(".csv")]
-                        if csv_files:
-                            raw = zf.read(csv_files[0])
+                        pdf_files = [n for n in zf.namelist() if "siop" in n.lower() and n.endswith(".pdf")]
+                        if pdf_files:
+                            raw_pdf = zf.read(pdf_files[0])
+                            st.info(f"使用ファイル: {pdf_files[0]}")
+                            options_df = parse_jpx_pdf(raw_pdf, today)
                         else:
-                            st.error("ZIP内にCSVファイルがありません")
-
-                raw_df = parse_jpx_csv(raw)
-                if not raw_df.empty:
-                    st.write("**読み込んだカラム:**", list(raw_df.columns))
-                    options_df = normalize_dataframe(raw_df, today)
+                            st.error("ZIP内にsiop_*.pdfが見つかりません。")
+                elif uploaded.name.endswith(".pdf"):
+                    options_df = parse_jpx_pdf(raw, today)
 
     if options_df.empty:
         st.warning("データが読み込まれていません。サイドバーでデモデータを選択するかCSVをアップロードしてください。")
