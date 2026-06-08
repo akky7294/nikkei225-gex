@@ -298,8 +298,9 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
     if agg.empty:
         return None, 0, None, None, None
 
-    # アグリゲートGEX（累積）
-    agg["agg_gex"] = agg["gex"].cumsum()
+    # アグリゲートGEX（高ストライク→低ストライク方向に累積）
+    # Tiger Brokers方式: 右端（高ストライク）から左に向かって積み上げる
+    agg["agg_gex"] = agg["gex"].iloc[::-1].cumsum().iloc[::-1]
 
     # ガンマフリップ（累積GEXがゼロ交差する点）
     gamma_flip = None
