@@ -34,15 +34,19 @@ def fetch_nikkei_spot() -> float:
 
 @st.cache_data(ttl=3600)  # 1時間キャッシュ
 def fetch_japan_rate() -> float:
-    """日本の短期金利（10年国債利回り）をYahoo Financeから取得する"""
+    """日本の短期金利（日本10年国債利回り）をYahoo Financeから取得する"""
     try:
-        # 日本10年国債利回り
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ETNX?interval=1d&range=5d"
+        # 日本10年国債利回り（^JP10YB）
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EJP10YB?interval=1d&range=5d"
         headers = {"User-Agent": "Mozilla/5.0"}
         resp = requests.get(url, headers=headers, timeout=5)
         data = resp.json()
         rate = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
-        return float(rate) / 100  # % → 小数
+        r = float(rate) / 100  # % → 小数
+        # 異常値チェック（日本金利は通常0〜3%）
+        if 0 <= r <= 0.03:
+            return r
+        return None
     except Exception:
         return None
 
