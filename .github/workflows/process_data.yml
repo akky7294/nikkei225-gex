@@ -79,24 +79,29 @@ jobs:
         env:
           TARGET_DATE: ${{ github.event.inputs.date }}
 
+      - name: Fetch spot price
+        run: |
+          python - <<'PYEOF'
+          import requests, os
+          manual = os.environ.get("MANUAL_SPOT", "").strip()
+          if manual:
+              spot = manual
+          else:
+              try:
+                  url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?interval=1m&range=1d"
+                  r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+                  spot = str(int(r.json()["chart"]["result"][0]["meta"]["regularMarketPrice"]))
+              except Exception:
+                  spot = "38500"
+          print(f"SPOT={spot}")
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"SPOT={spot}\n")
+          PYEOF
+        env:
+          MANUAL_SPOT: ${{ github.event.inputs.spot }}
+
       - name: Parse PDF to CSV
         run: |
-          # 手動入力があればそれを使う、なければYahoo Financeから自動取得
-          MANUAL_SPOT="${{ github.event.inputs.spot }}"
-          if [ -z "$MANUAL_SPOT" ]; then
-            SPOT=$(python -c "
-import requests
-try:
-    url = 'https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?interval=1m&range=1d'
-    r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
-    price = r.json()['chart']['result'][0]['meta']['regularMarketPrice']
-    print(int(price))
-except:
-    print(38500)
-")
-          else
-            SPOT=$MANUAL_SPOT
-          fi
           echo "Using spot: $SPOT"
           python fetch_data.py --pdf data/temp.pdf --spot $SPOT --out data/latest.csv
 
