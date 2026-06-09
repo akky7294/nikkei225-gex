@@ -649,53 +649,95 @@ def main():
                 )
                 st.plotly_chart(fig_iv, use_container_width=True)
 
-    # ── かんたん解説セクション ──────────────────────────────────────────────────
+    # ── 今日の状況（データ連動）解説 ────────────────────────────────────────────
     st.divider()
-    st.subheader("📖 このチャートの読み方（かんたん解説）")
+    st.subheader("📊 今日の状況")
+
+    is_long_gamma = net_total > 0
+
+    # ガンマフリップとの位置関係
+    if gamma_flip:
+        if spot > gamma_flip:
+            flip_status = f"✅ 現値（{spot:,.0f}）はガンマフリップ（{gamma_flip:,.0f}）の **上** → 安定ゾーン"
+            flip_alert = False
+        else:
+            flip_status = f"⚠️ 現値（{spot:,.0f}）はガンマフリップ（{gamma_flip:,.0f}）の **下** → 要警戒"
+            flip_alert = True
+    else:
+        flip_status = "ガンマフリップなし（全ストライクでLong Gamma環境）"
+        flip_alert = False
+
+    put_dist = ((spot - put_wall) / spot * 100) if put_wall else None
+    call_dist = ((call_wall - spot) / spot * 100) if call_wall else None
+
+    # 総合判断
+    if is_long_gamma and not flip_alert:
+        overall_icon = "🟢"
+        overall_text = "安定環境（Long Gamma）"
+        overall_desc = "ディーラーが相場の安全弁として機能しています。大きな急騰・急落が起きにくい状態です。"
+    else:
+        overall_icon = "🔴"
+        overall_text = "注意環境（Short Gamma / フリップ下）"
+        overall_desc = "ディーラーが相場の動きを加速させる可能性があります。ボラティリティが高まりやすい状態です。"
+
+    st.markdown(f"### {overall_icon} 総合判断：{overall_text}")
+    st.info(overall_desc)
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("""
-### 💡 ひとことで言うと
-**「ディーラーが相場の安全弁になってくれているかどうか」を見るツール**です。
-
-### 🏦 ディーラーって何してるの？
-証券会社（ディーラー）はオプションをトレーダーに売っています。
-売った分のリスクを消すために、**日経225の先物を自動的に売買**します。
-
-**コール（上昇権利）を売った場合：**
-- 相場が上がる → ディーラーは先物を**買う**（上昇を抑える）
-- 相場が下がる → ディーラーは先物を**売る**（下落を抑える）
-- → **相場が安定する**
-
-**プット（下落権利）が多い場合：**
-- 相場が下がる → ディーラーも一緒に先物を**売る**
-- → **下落が加速してしまう**
-        """)
+        st.markdown("#### 📌 現在のポジション")
+        st.markdown(f"- **Net GEX**: {net_total/1e8:.1f} 億円 → {'Long Gamma ✅' if is_long_gamma else 'Short Gamma ⚠️'}")
+        st.markdown(f"- **ガンマフリップ**: {flip_status}")
+        if put_wall and put_dist is not None:
+            st.markdown(f"- **プットウォール（下値の壁）**: {put_wall:,.0f}（現値から {put_dist:.1f}% 下）")
+        if call_wall and call_dist is not None:
+            st.markdown(f"- **コールウォール（上値の壁）**: {call_wall:,.0f}（現値から {call_dist:.1f}% 上）")
 
     with col2:
-        st.markdown("""
-### 📊 各指標の見方
+        st.markdown("#### 🎯 今日の注目ポイント")
+        points = []
+        if call_wall and call_dist is not None and call_dist < 3:
+            points.append(f"📍 コールウォール（{call_wall:,.0f}）が近い（{call_dist:.1f}%上）→ 上値が重くなりやすい")
+        if put_wall and put_dist is not None and put_dist < 3:
+            points.append(f"📍 プットウォール（{put_wall:,.0f}）が近い（{put_dist:.1f}%下）→ 下値サポートが機能しやすい")
+        if gamma_flip and flip_alert:
+            points.append(f"⚠️ ガンマフリップ（{gamma_flip:,.0f}）を下抜け → 急落リスク高まっている")
+        if gamma_flip and not flip_alert and abs(spot - gamma_flip) / spot < 0.03:
+            points.append(f"⚡ ガンマフリップ（{gamma_flip:,.0f}）に接近中 → 下抜けに注意")
+        if not points:
+            points.append("特段の警戒ポイントなし。現値周辺は安定した環境です。")
+        for p in points:
+            st.markdown(f"- {p}")
+
+    st.caption("⚠️ OIベースのため日中変化は捕捉できません。他のシグナルと組み合わせてご利用ください。")
+
+    # ── 固定解説（折りたたみ）────────────────────────────────────────────────────
+    with st.expander("📖 GEXとは？（基礎知識）"):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("""
+**💡 ひとことで言うと**
+「ディーラーが相場の安全弁になってくれているかどうか」を見るツールです。
+
+ディーラー（証券会社）はオプションを売った分のリスクを消すため、日経225先物を自動売買します。
+
+- コールが多い → 相場が動くたびに反対売買 → **安定する**
+- プットが多い → 相場と同じ方向に動く → **荒れやすくなる**
+            """)
+        with c2:
+            st.markdown("""
+**📊 各指標の見方**
 
 | 指標 | 意味 |
 |------|------|
-| 🔴 **赤バー（コールGEX）** | コールOIが多いストライク |
-| 🟢 **緑バー（プットGEX）** | プットOIが多いストライク |
-| 🔵 **青線（累積GEX）** | プラス＝安定、マイナス＝荒れやすい |
-| ⚡ **ガンマフリップ** | 青線がゼロを横切るライン。ここを下抜けると急落しやすい |
-| 🟢 **プットウォール** | 下値の壁。ここで下げ止まりやすい |
-| 🔴 **コールウォール** | 上値の壁。ここで上値が重くなりやすい |
-
-### 🎯 シンプルな使い方
-| 状況 | 判断 |
-|------|------|
-| 青線がプラス圏 | 相場が安定しやすい |
-| 青線がマイナス圏 | 荒れやすい・急落注意 |
-| 現値がガンマフリップを下抜け | 要警戒 |
-
-> ⚠️ OIベースのため日中変化は捕捉できません。他のシグナルと組み合わせてご利用ください。
-        """)
+| 🔴 赤バー | コールOIが多いストライク |
+| 🟢 緑バー | プットOIが多いストライク |
+| 🔵 青線 | プラス＝安定、マイナス＝荒れやすい |
+| ⚡ ガンマフリップ | ここを下抜けると急落しやすい |
+| 🟢 プットウォール | 下値の壁 |
+| 🔴 コールウォール | 上値の壁 |
+            """)
 
     with st.expander("📖 GEXの読み方（詳細）"):
         st.markdown("""
