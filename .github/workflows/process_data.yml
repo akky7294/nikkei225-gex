@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       spot:
-        description: '日経225現値（例: 38500）'
+        description: '日経225現値（空白=Yahoo Financeから自動取得）'
         required: false
-        default: '38500'
+        default: ''
       date:
         description: '取得日付（例: 20260605）空白=前営業日'
         required: false
