@@ -3,7 +3,7 @@ name: 日次GEXデータ自動更新
 on:
   # 毎営業日 朝8時（JST）に自動実行
   schedule:
-    - cron: '0 23 * * 1-5'  # UTC 23:00 = JST 8:00 月〜金
+    - cron: '10 0 * * 2-6'  # UTC 00:10 = JST 9:10 火〜土（月〜金の取引日）
   # 手動実行ボタン
   workflow_dispatch:
     inputs:
