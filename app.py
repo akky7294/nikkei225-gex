@@ -123,8 +123,11 @@ def implied_vol(S, K, T, r, market_price, option_type="call", default=0.20):
 
 def calculate_gex(df: pd.DataFrame, spot: float, r: float = 0.001) -> pd.DataFrame:
     MULTIPLIER = 1000
+    MAX_OI = 500_000  # 50万枚超は誤読データとして除外
     records = []
     for _, row in df.iterrows():
+        if row["oi"] > MAX_OI:
+            continue  # パーサーの誤読（金額等を誤取得）をスキップ
         T = row["days_to_expiry"] / 365.0
         gamma = bs_gamma(spot, row["strike"], T, r, row["iv"])
         gex = gamma * row["oi"] * MULTIPLIER * spot
