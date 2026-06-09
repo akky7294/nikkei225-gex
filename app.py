@@ -273,20 +273,18 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
     """
     # データ集計
     if selected_expiry == "全満期合算":
-        agg = gex_df.groupby("strike", as_index=False).agg(
-            call_gex=("call_gex", "sum"),
-            put_gex=("put_gex", "sum"),
-            gex=("gex", "sum"),
-            oi=("oi", "sum"),
-        )
+        filtered = gex_df
+    elif isinstance(selected_expiry, list):
+        filtered = gex_df[gex_df["expiry"].isin(selected_expiry)]
     else:
         filtered = gex_df[gex_df["expiry"] == selected_expiry]
-        agg = filtered.groupby("strike", as_index=False).agg(
-            call_gex=("call_gex", "sum"),
-            put_gex=("put_gex", "sum"),
-            gex=("gex", "sum"),
-            oi=("oi", "sum"),
-        )
+
+    agg = filtered.groupby("strike", as_index=False).agg(
+        call_gex=("call_gex", "sum"),
+        put_gex=("put_gex", "sum"),
+        gex=("gex", "sum"),
+        oi=("oi", "sum"),
+    )
 
     # 現値±25%・OIフィルター
     agg = agg[
@@ -436,7 +434,12 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
 
     fig.update_layout(
         title=dict(
-            text=f"日経225 GEX  現値: {spot:,.0f}  Net: {net_total/unit:.1f} 億円",
+            text=(
+                f"日経225 GEX  現値: {spot:,.0f}  Net: {net_total/unit:.1f} 億円"
+                + ("  |  全満期合算" if selected_expiry == "全満期合算"
+                   else f"  |  {len(selected_expiry)}満期合算" if isinstance(selected_expiry, list)
+                   else f"  |  {pd.Timestamp(selected_expiry).strftime('%Y/%m/%d')}")
+            ),
             font=dict(size=13),
         ),
         barmode="overlay",
@@ -577,11 +580,22 @@ def main():
     # GEX計算
     gex_df = calculate_gex(options_df, spot, risk_free)
 
-    # 満期フィルター
+    # 満期フィルター（複数選択可）
     expiries = sorted(gex_df["expiry"].unique())
-    expiry_labels = ["全満期合算"] + [pd.Timestamp(e).strftime("%Y/%m/%d") for e in expiries]
-    selected_label = st.selectbox("満期日フィルター", expiry_labels)
-    selected_expiry = "全満期合算" if selected_label == "全満期合算" else expiries[expiry_labels.index(selected_label) - 1]
+    expiry_label_map = {pd.Timestamp(e).strftime("%Y/%m/%d"): e for e in expiries}
+    expiry_options = list(expiry_label_map.keys())
+
+    selected_labels = st.multiselect(
+        "満期日フィルター（複数選択可・未選択=全合算）",
+        options=expiry_options,
+        default=[],
+        help="何も選ばないと全満期合算。複数選ぶと選択分を合算して表示。"
+    )
+
+    if len(selected_labels) == 0:
+        selected_expiry = "全満期合算"
+    else:
+        selected_expiry = [expiry_label_map[l] for l in selected_labels]
 
     # チャート描画
     result = build_gex_chart(gex_df, spot, selected_expiry, oi_threshold)
