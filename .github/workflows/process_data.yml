@@ -1,9 +1,10 @@
 name: 日次GEXデータ自動更新
 
 on:
-  # 毎営業日 朝8時（JST）に自動実行
+  # 毎営業日 2回自動実行（JST）
   schedule:
-    - cron: '10 0 * * 2-6'  # UTC 00:10 = JST 9:10 火〜土（月〜金の取引日）
+    - cron: '0 23 * * 1-5'   # UTC 23:00 = JST 8:00 月〜金（JPX未公開の可能性あり・失敗してもOK）
+    - cron: '10 0 * * 2-6'   # UTC 00:10 = JST 9:10 火〜土（JPX公開後・本番取得）
   # 手動実行ボタン
   workflow_dispatch:
     inputs:
@@ -57,8 +58,8 @@ jobs:
           resp = requests.get(url, headers=headers, timeout=30)
 
           if resp.status_code != 200:
-              print(f"Failed: HTTP {resp.status_code}")
-              sys.exit(1)
+              print(f"JPXデータ未公開またはエラー: HTTP {resp.status_code}（8時台は正常）")
+              sys.exit(0)  # エラーではなく正常終了（8時実行時はデータ未公開の可能性あり）
 
           print(f"Downloaded {len(resp.content):,} bytes")
 
@@ -75,11 +76,15 @@ jobs:
           with open("data/temp.pdf", "wb") as f:
               f.write(raw_pdf)
           print(f"PDF saved ({len(raw_pdf):,} bytes)")
+          # 成功フラグを立てる
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write("JPX_OK=true\n")
           PYEOF
         env:
           TARGET_DATE: ${{ github.event.inputs.date }}
 
       - name: Fetch spot price
+        if: env.JPX_OK == 'true'
         run: |
           python - <<'PYEOF'
           import requests, os
@@ -101,14 +106,17 @@ jobs:
           MANUAL_SPOT: ${{ github.event.inputs.spot }}
 
       - name: Parse PDF to CSV
+        if: env.JPX_OK == 'true'
         run: |
           echo "Using spot: $SPOT"
           python fetch_data.py --pdf data/temp.pdf --spot $SPOT --out data/latest.csv
 
       - name: Cleanup temp PDF
+        if: env.JPX_OK == 'true'
         run: rm -f data/temp.pdf
 
       - name: Commit and push
+        if: env.JPX_OK == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
