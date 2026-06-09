@@ -127,7 +127,7 @@ def calculate_gex(df: pd.DataFrame, spot: float, r: float = 0.001) -> pd.DataFra
     for _, row in df.iterrows():
         T = row["days_to_expiry"] / 365.0
         gamma = bs_gamma(spot, row["strike"], T, r, row["iv"])
-        gex = gamma * row["oi"] * MULTIPLIER * spot**2
+        gex = gamma * row["oi"] * MULTIPLIER * spot
         sign = 1 if row["type"] == "call" else -1
         records.append({
             "strike": row["strike"],
@@ -437,7 +437,7 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             text=(
                 f"日経225 GEX  現値: {spot:,.0f}  Net: {net_total/unit:.1f} 億円"
                 + ("  |  全満期合算" if selected_expiry == "全満期合算"
-                   else f"  |  {len(selected_expiry)}満期合算" if isinstance(selected_expiry, list)
+                   else ("  |  " + " + ".join([pd.Timestamp(e).strftime("%m/%d") for e in selected_expiry])) if isinstance(selected_expiry, list)
                    else f"  |  {pd.Timestamp(selected_expiry).strftime('%Y/%m/%d')}")
             ),
             font=dict(size=13),
