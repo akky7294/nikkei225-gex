@@ -675,99 +675,82 @@ def main():
         overall_label = "ネガティブガンマ環境（Short Gamma）"
         overall_color = "error"
 
-    # ── 青線の状態を最初にドーンと表示 ──
+    # ── ① 青線の状態（最重要）──
     if is_long_gamma:
-        if call_wall and call_dist is not None:
-            st.success(f"""
+        st.success(f"""
 ### 🟢 青線はゼロ以上 → ポジティブガンマ環境
 
-MMは相場が上がるほど売りヘッジを増やします。これが上昇を抑える力になります。
-
-👉 **コールウォール（{call_wall:,.0f}）の下にいる間は、上がるほど業者の売りが出て相場が抑えられやすい。**
-ただし、**{call_wall:,.0f}を上抜けた瞬間、業者は買い転換**します。そこから先は上昇が一気に加速する可能性があります。
-""")
-        else:
-            st.success(f"""
-### 🟢 青線はゼロ以上 → ポジティブガンマ環境
-
-MMは相場が上がるほど売りヘッジを増やします。これが上昇を抑える力になります。
-
-👉 **上がれば業者の売りが出て相場が抑えられやすく、下がれば買いが入りやすい状態です。**
+複数の業者が**全員、売りヘッジ**をかけている状態です。
+相場が上がれば業者は売り、下がれば買う。この動きが機械的・強制的に入り続けます。
 """)
     else:
         st.error(f"""
 ### 🔴 青線はゼロ以下 → ネガティブガンマ環境
 
-MMは相場が動くたびに**同じ方向にヘッジ**します。
-上がれば買い、下がれば売り。
-
-👉 **動いた方向に勢いが増しやすく、トレンドが加速しやすい状態です。**
-{f"プットウォール（{put_wall:,.0f}）を下抜けると、さらに売りが加速する可能性があります。" if put_wall else ""}
+業者が**全員、順張りヘッジ**をかけている状態です。
+相場が上がれば業者も買い、下がれば売る。動いた方向にさらに加速しやすい局面です。
 """)
 
-    # ── 現在位置の分析 ──
-    st.markdown("#### 📌 現在の位置確認")
-    col1, col2 = st.columns(2)
+    # ── ② 現在地の状況判断 ──
+    st.markdown("#### 📌 現在地の分析")
 
+    if is_long_gamma and not flip_alert:
+        # ケース1: ガンマフリップとコールウォールの間（最確ゾーン）
+        if gamma_flip and call_wall:
+            st.info(f"""
+**🎯 現値（{spot:,.0f}）はガンマフリップ（{gamma_flip:,.0f}）〜コールウォール（{call_wall:,.0f}）の間にいます。**
+
+このゾーンでは業者が全員売りヘッジをかけているため、相場の動きが最も読みやすい状態です。
+
+- 上がれば業者の売りで抑えられ、コールウォール（{call_wall:,.0f}）が天井として機能しやすい
+- 下がれば業者の買いで支えられ、ガンマフリップ（{gamma_flip:,.0f}）がサポートになりやすい
+
+**⚠️ ガンマフリップ（{gamma_flip:,.0f}）を割ったら環境が一変するため、撤退の目安にしてください。**
+""")
+        # ケース2: コールウォールの上（ポジティブガンマだがウォール上）
+        elif call_wall and spot > call_wall:
+            st.warning(f"""
+**現値（{spot:,.0f}）はコールウォール（{call_wall:,.0f}）の上にいます。**
+
+青線はまだプラスのため業者全体では売りヘッジ継続中です。
+ただし、コールウォールを売った業者（一部）は{call_wall:,.0f}を超えた時点で買いに転換しています。
+全体としては売り超ですが、局所的な買いが混在している状態です。
+""")
+        else:
+            st.info(f"""
+**現値（{spot:,.0f}）はポジティブガンマ環境にいます。**
+業者の売りヘッジが相場を支えています。
+""")
+
+    elif flip_alert:
+        # ケース3: ガンマフリップの下（ネガティブガンマ）
+        st.error(f"""
+**⚠️ 現値（{spot:,.0f}）はガンマフリップ（{gamma_flip:,.0f}）の下にいます。**
+
+業者が順張りヘッジに転じており、下落が加速しやすい状態です。
+{f"プットウォール（{put_wall:,.0f}）が下値の目安ですが、割り込むとさらに売りが加速する可能性があります。" if put_wall else ""}
+
+ガンマフリップ（{gamma_flip:,.0f}）を上抜け回復できるかが焦点です。
+""")
+    else:
+        st.info(f"現値（{spot:,.0f}）の状況を確認中です。")
+
+    # ── ③ キーレベル一覧 ──
+    st.markdown("#### 🗺️ キーレベル")
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown("**キーレベルとの距離**")
         if gamma_flip:
-            if flip_alert:
-                st.markdown(f"- ⚠️ **ガンマフリップ（{gamma_flip:,.0f}）の下** にいます（{flip_dist:.1f}%下）")
-            else:
-                st.markdown(f"- ✅ **ガンマフリップ（{gamma_flip:,.0f}）の上** にいます（{flip_dist:.1f}%上）")
-        else:
-            st.markdown("- ✅ ガンマフリップなし（全域Long Gamma）")
-        if call_wall and call_dist is not None:
-            st.markdown(f"- 🔴 **コールウォール（{call_wall:,.0f}）**まで {call_dist:.1f}% 上")
-        if put_wall and put_dist is not None:
-            st.markdown(f"- 🟢 **プットウォール（{put_wall:,.0f}）**まで {put_dist:.1f}% 下")
-
+            st.metric("⚡ ガンマフリップ", f"{gamma_flip:,.0f}",
+                delta=f"現値より{flip_dist:.1f}%{'下' if flip_alert else '下'}",
+                delta_color="inverse")
     with col2:
-        st.markdown("**Net GEX**")
-        net_str = f"{net_total/1e8:.1f} 億円"
-        st.metric("Net GEX", net_str, delta="Long Gamma" if is_long_gamma else "Short Gamma")
-
-    # ── シナリオ分析 ──
-    st.markdown("#### 🔮 今日のシナリオ分析")
-
-    scenarios = []
-
-    # 上昇シナリオ
-    if call_wall and call_dist is not None:
-        if call_dist < 2:
-            up_scenario = f"📍 **コールウォール（{call_wall:,.0f}）がすぐ上（{call_dist:.1f}%）にあります。** これが当面の天井（レジスタンス）です。"
-            if is_long_gamma:
-                up_scenario += f" ポジティブガンマ環境のため、MMの売りヘッジがここで上昇を抑えます。"
-            else:
-                up_scenario += f" もし{call_wall:,.0f}を**上抜けると**、コールを売っていたMMが一斉に買い戻しを迫られ、急騰する燃料になります。"
-        elif call_dist < 5:
-            up_scenario = f"🔴 **コールウォール（{call_wall:,.0f}）まで{call_dist:.1f}%。** 上値の壁として意識されやすいレベルです。"
-        else:
-            up_scenario = f"🔴 **コールウォール（{call_wall:,.0f}）は現値から{call_dist:.1f}%上。** 当面の上値余地はあります。"
-        scenarios.append(("上昇した場合", up_scenario))
-
-    # 下落シナリオ
-    if put_wall and put_dist is not None:
-        if put_dist < 2:
-            down_scenario = f"📍 **プットウォール（{put_wall:,.0f}）がすぐ下（{put_dist:.1f}%）にあります。** 強いサポートとして機能しやすいです。"
-        elif put_dist < 5:
-            down_scenario = f"🟢 **プットウォール（{put_wall:,.0f}）まで{put_dist:.1f}%。** 下値サポートとして意識されやすいレベルです。"
-        else:
-            down_scenario = f"🟢 **プットウォール（{put_wall:,.0f}）は現値から{put_dist:.1f}%下。** 当面の下値余地があります。"
-        scenarios.append(("下落した場合", down_scenario))
-
-    # ガンマフリップ突破シナリオ
-    if gamma_flip:
-        if not flip_alert and flip_dist is not None and flip_dist < 3:
-            scenarios.append(("⚡ 要注意", f"ガンマフリップ（{gamma_flip:,.0f}）まで{flip_dist:.1f}%と接近中です。ここを**下抜けると環境がネガティブガンマに転換**し、下落が加速しやすくなります。"))
-        elif flip_alert:
-            scenarios.append(("⚡ 回復ライン", f"ガンマフリップ（{gamma_flip:,.0f}）まで{flip_dist:.1f}%上。ここを**上抜けるとポジティブガンマに転換**し、相場が落ち着きを取り戻しやすくなります。"))
-
-    for title, body in scenarios:
-        st.markdown(f"**{title}**")
-        st.markdown(body)
-        st.markdown("")
+        if put_wall and put_dist is not None:
+            st.metric("🟢 プットウォール（下値の壁）", f"{put_wall:,.0f}",
+                delta=f"現値より{put_dist:.1f}%下", delta_color="off")
+    with col3:
+        if call_wall and call_dist is not None:
+            st.metric("🔴 コールウォール（上値の壁）", f"{call_wall:,.0f}",
+                delta=f"現値より{call_dist:.1f}%上", delta_color="off")
 
     st.caption("⚠️ OIベースのため日中変化は捕捉できません。他のシグナルと組み合わせてご利用ください。")
 
