@@ -649,66 +649,124 @@ def main():
                 )
                 st.plotly_chart(fig_iv, use_container_width=True)
 
-    # ── 今日の状況（データ連動）解説 ────────────────────────────────────────────
+    # ── 今日の詳細分析（データ連動）────────────────────────────────────────────
     st.divider()
-    st.subheader("📊 今日の状況")
+    st.subheader("📊 MM（マーケットメーカー）分析レポート")
 
     is_long_gamma = net_total > 0
-
-    # ガンマフリップとの位置関係
-    if gamma_flip:
-        if spot > gamma_flip:
-            flip_status = f"✅ 現値（{spot:,.0f}）はガンマフリップ（{gamma_flip:,.0f}）の **上** → 安定ゾーン"
-            flip_alert = False
-        else:
-            flip_status = f"⚠️ 現値（{spot:,.0f}）はガンマフリップ（{gamma_flip:,.0f}）の **下** → 要警戒"
-            flip_alert = True
-    else:
-        flip_status = "ガンマフリップなし（全ストライクでLong Gamma環境）"
-        flip_alert = False
-
     put_dist = ((spot - put_wall) / spot * 100) if put_wall else None
     call_dist = ((call_wall - spot) / spot * 100) if call_wall else None
 
-    # 総合判断
+    # ガンマフリップとの位置関係
+    if gamma_flip:
+        flip_alert = spot < gamma_flip
+        flip_dist = abs(spot - gamma_flip) / spot * 100
+    else:
+        flip_alert = False
+        flip_dist = None
+
+    # ── 総合判断バナー ──
     if is_long_gamma and not flip_alert:
         overall_icon = "🟢"
-        overall_text = "安定環境（Long Gamma）"
-        overall_desc = "ディーラーが相場の安全弁として機能しています。大きな急騰・急落が起きにくい状態です。"
+        overall_label = "ポジティブガンマ環境（Long Gamma）"
+        overall_color = "success"
     else:
         overall_icon = "🔴"
-        overall_text = "注意環境（Short Gamma / フリップ下）"
-        overall_desc = "ディーラーが相場の動きを加速させる可能性があります。ボラティリティが高まりやすい状態です。"
+        overall_label = "ネガティブガンマ環境（Short Gamma）"
+        overall_color = "error"
 
-    st.markdown(f"### {overall_icon} 総合判断：{overall_text}")
-    st.info(overall_desc)
+    st.markdown(f"### {overall_icon} 総合判断：{overall_label}")
 
+    # ── MMの今日の行動原理 ──
+    st.markdown("#### 🏦 今日のMMはどう動く？")
+
+    if is_long_gamma and not flip_alert:
+        mm_behavior = f"""
+現在、**ポジティブガンマ（Long Gamma）環境**です。
+
+MMのシステムは今、**反張りヘッジ**モードで動いています。
+- 日経が**上がれば** → MMは先物を**売りヘッジ** → 上昇を自然に抑制
+- 日経が**下がれば** → MMは先物を**買いヘッジ** → 下落を自然に抑制
+
+つまり今日の相場は、**MMが自動的に安全弁として機能する構造**になっています。
+大きな急騰・急落が起きにくく、**レンジ内での動きになりやすい局面**です。
+"""
+    else:
+        mm_behavior = f"""
+現在、**ネガティブガンマ（Short Gamma）環境**です。
+
+MMのシステムは今、**順張りヘッジ**モードで動いています。
+- 日経が**上がれば** → MMは先物を**買いヘッジ** → さらなる上昇を加速
+- 日経が**下がれば** → MMは先物を**売りヘッジ** → さらなる下落を加速
+
+MMが相場の動きに**同じ方向に追いかける**構造になっているため、
+一方向に動き出すと**加速しやすい、ボラティリティが高い局面**です。
+"""
+    st.info(mm_behavior)
+
+    # ── 現在位置の分析 ──
+    st.markdown("#### 📌 現在の位置確認")
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("#### 📌 現在のポジション")
-        st.markdown(f"- **Net GEX**: {net_total/1e8:.1f} 億円 → {'Long Gamma ✅' if is_long_gamma else 'Short Gamma ⚠️'}")
-        st.markdown(f"- **ガンマフリップ**: {flip_status}")
-        if put_wall and put_dist is not None:
-            st.markdown(f"- **プットウォール（下値の壁）**: {put_wall:,.0f}（現値から {put_dist:.1f}% 下）")
+        st.markdown("**キーレベルとの距離**")
+        if gamma_flip:
+            if flip_alert:
+                st.markdown(f"- ⚠️ **ガンマフリップ（{gamma_flip:,.0f}）の下** にいます（{flip_dist:.1f}%下）")
+            else:
+                st.markdown(f"- ✅ **ガンマフリップ（{gamma_flip:,.0f}）の上** にいます（{flip_dist:.1f}%上）")
+        else:
+            st.markdown("- ✅ ガンマフリップなし（全域Long Gamma）")
         if call_wall and call_dist is not None:
-            st.markdown(f"- **コールウォール（上値の壁）**: {call_wall:,.0f}（現値から {call_dist:.1f}% 上）")
+            st.markdown(f"- 🔴 **コールウォール（{call_wall:,.0f}）**まで {call_dist:.1f}% 上")
+        if put_wall and put_dist is not None:
+            st.markdown(f"- 🟢 **プットウォール（{put_wall:,.0f}）**まで {put_dist:.1f}% 下")
 
     with col2:
-        st.markdown("#### 🎯 今日の注目ポイント")
-        points = []
-        if call_wall and call_dist is not None and call_dist < 3:
-            points.append(f"📍 コールウォール（{call_wall:,.0f}）が近い（{call_dist:.1f}%上）→ 上値が重くなりやすい")
-        if put_wall and put_dist is not None and put_dist < 3:
-            points.append(f"📍 プットウォール（{put_wall:,.0f}）が近い（{put_dist:.1f}%下）→ 下値サポートが機能しやすい")
-        if gamma_flip and flip_alert:
-            points.append(f"⚠️ ガンマフリップ（{gamma_flip:,.0f}）を下抜け → 急落リスク高まっている")
-        if gamma_flip and not flip_alert and abs(spot - gamma_flip) / spot < 0.03:
-            points.append(f"⚡ ガンマフリップ（{gamma_flip:,.0f}）に接近中 → 下抜けに注意")
-        if not points:
-            points.append("特段の警戒ポイントなし。現値周辺は安定した環境です。")
-        for p in points:
-            st.markdown(f"- {p}")
+        st.markdown("**Net GEX**")
+        net_str = f"{net_total/1e8:.1f} 億円"
+        st.metric("Net GEX", net_str, delta="Long Gamma" if is_long_gamma else "Short Gamma")
+
+    # ── シナリオ分析 ──
+    st.markdown("#### 🔮 今日のシナリオ分析")
+
+    scenarios = []
+
+    # 上昇シナリオ
+    if call_wall and call_dist is not None:
+        if call_dist < 2:
+            up_scenario = f"📍 **コールウォール（{call_wall:,.0f}）がすぐ上（{call_dist:.1f}%）にあります。** これが当面の天井（レジスタンス）です。"
+            if is_long_gamma:
+                up_scenario += f" ポジティブガンマ環境のため、MMの売りヘッジがここで上昇を抑えます。"
+            else:
+                up_scenario += f" もし{call_wall:,.0f}を**上抜けると**、コールを売っていたMMが一斉に買い戻しを迫られ、急騰する燃料になります。"
+        elif call_dist < 5:
+            up_scenario = f"🔴 **コールウォール（{call_wall:,.0f}）まで{call_dist:.1f}%。** 上値の壁として意識されやすいレベルです。"
+        else:
+            up_scenario = f"🔴 **コールウォール（{call_wall:,.0f}）は現値から{call_dist:.1f}%上。** 当面の上値余地はあります。"
+        scenarios.append(("上昇した場合", up_scenario))
+
+    # 下落シナリオ
+    if put_wall and put_dist is not None:
+        if put_dist < 2:
+            down_scenario = f"📍 **プットウォール（{put_wall:,.0f}）がすぐ下（{put_dist:.1f}%）にあります。** 強いサポートとして機能しやすいです。"
+        elif put_dist < 5:
+            down_scenario = f"🟢 **プットウォール（{put_wall:,.0f}）まで{put_dist:.1f}%。** 下値サポートとして意識されやすいレベルです。"
+        else:
+            down_scenario = f"🟢 **プットウォール（{put_wall:,.0f}）は現値から{put_dist:.1f}%下。** 当面の下値余地があります。"
+        scenarios.append(("下落した場合", down_scenario))
+
+    # ガンマフリップ突破シナリオ
+    if gamma_flip:
+        if not flip_alert and flip_dist is not None and flip_dist < 3:
+            scenarios.append(("⚡ 要注意", f"ガンマフリップ（{gamma_flip:,.0f}）まで{flip_dist:.1f}%と接近中です。ここを**下抜けると環境がネガティブガンマに転換**し、下落が加速しやすくなります。"))
+        elif flip_alert:
+            scenarios.append(("⚡ 回復ライン", f"ガンマフリップ（{gamma_flip:,.0f}）まで{flip_dist:.1f}%上。ここを**上抜けるとポジティブガンマに転換**し、相場が落ち着きを取り戻しやすくなります。"))
+
+    for title, body in scenarios:
+        st.markdown(f"**{title}**")
+        st.markdown(body)
+        st.markdown("")
 
     st.caption("⚠️ OIベースのため日中変化は捕捉できません。他のシグナルと組み合わせてご利用ください。")
 
