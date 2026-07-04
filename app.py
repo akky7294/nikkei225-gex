@@ -335,7 +335,7 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
     pos_zone = agg[agg["agg_gex"] >= 0]
     neg_zone = agg[agg["agg_gex"] < 0]
 
-    for zone_df, fillcolor in [(pos_zone, "rgba(46,204,113,0.08)"), (neg_zone, "rgba(231,76,60,0.08)")]:
+    for zone_df, fillcolor in [(pos_zone, "rgba(0,200,150,0.06)"), (neg_zone, "rgba(255,92,122,0.06)")]:
         if not zone_df.empty:
             x0 = zone_df["strike"].min() - 125
             x1 = zone_df["strike"].max() + 125
@@ -352,8 +352,9 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             x=agg["strike"],
             y=agg["put_gex"] / unit,
             name="プット GEX",
-            marker_color="#27ae60",
-            opacity=0.85,
+            marker_color="#00C896",
+            marker_line_width=0,
+            opacity=0.9,
             hovertemplate="Strike: %{x:,.0f}<br>Put GEX: %{y:.1f} 億円<extra></extra>",
         ),
         secondary_y=False,
@@ -365,8 +366,9 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             x=agg["strike"],
             y=agg["call_gex"] / unit,
             name="コール GEX",
-            marker_color="#e74c3c",
-            opacity=0.85,
+            marker_color="#FF5C7A",
+            marker_line_width=0,
+            opacity=0.9,
             hovertemplate="Strike: %{x:,.0f}<br>Call GEX: %{y:.1f} 億円<extra></extra>",
         ),
         secondary_y=False,
@@ -379,7 +381,7 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             y=agg["agg_gex"] / unit,
             name="アグリゲートGEX",
             mode="lines",
-            line=dict(color="#3498db", width=2),
+            line=dict(color="#6C9FFF", width=2.5, shape="spline", smoothing=0.6),
             hovertemplate="Strike: %{x:,.0f}<br>Aggregate GEX: %{y:.1f} 億円<extra></extra>",
         ),
         secondary_y=True,
@@ -388,9 +390,9 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
     # ── 現値ライン ──
     fig.add_vline(
         x=spot,
-        line_width=2, line_dash="solid", line_color="#f39c12",
+        line_width=2, line_dash="solid", line_color="#FFB020",
         annotation_text=f"現値<br>{spot:,.0f}",
-        annotation_font_color="#f39c12",
+        annotation_font_color="#FFB020",
         annotation_font_size=10,
         annotation_position="top right",
     )
@@ -399,9 +401,9 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
     if gamma_flip:
         fig.add_vline(
             x=gamma_flip,
-            line_width=1.5, line_dash="dash", line_color="#f39c12",
+            line_width=1.5, line_dash="dash", line_color="#A78BFA",
             annotation_text=f"GFlip<br>{gamma_flip:,.0f}",
-            annotation_font_color="#f39c12",
+            annotation_font_color="#A78BFA",
             annotation_font_size=9,
             annotation_position="top left",
         )
@@ -412,7 +414,7 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
         x=put_wall, y=pw_y,
         text=f"▲P壁<br>{put_wall:,.0f}",
         showarrow=False,
-        font=dict(color="#27ae60", size=10),
+        font=dict(color="#00C896", size=10),
         yanchor="top" if pw_y < 0 else "bottom",
     )
 
@@ -422,13 +424,13 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
         x=call_wall, y=cw_y,
         text=f"▼C壁<br>{call_wall:,.0f}",
         showarrow=False,
-        font=dict(color="#e74c3c", size=10),
+        font=dict(color="#FF5C7A", size=10),
         yanchor="bottom" if cw_y > 0 else "top",
     )
 
     # ── ゼロライン ──
-    fig.add_hline(y=0, line_width=1, line_color="#555", secondary_y=False)
-    fig.add_hline(y=0, line_width=0.5, line_color="#334", line_dash="dot", secondary_y=True)
+    fig.add_hline(y=0, line_width=1, line_color="rgba(255,255,255,0.25)", secondary_y=False)
+    fig.add_hline(y=0, line_width=0.5, line_color="rgba(108,159,255,0.3)", line_dash="dot", secondary_y=True)
 
     # x軸ティック
     x_min = int(agg["strike"].min())
@@ -446,37 +448,43 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             font=dict(size=13),
         ),
         barmode="overlay",
-        plot_bgcolor="#0e1117",
-        paper_bgcolor="#0e1117",
-        font_color="#fafafa",
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font_color="#e6e9f0",
         height=500,
         showlegend=True,
         legend=dict(
             orientation="h", yanchor="bottom", y=-0.30,
             xanchor="center", x=0.5,
-            font=dict(size=11),
+            font=dict(size=11, color="#8b93a7"),
+            bgcolor="rgba(0,0,0,0)",
         ),
         margin=dict(l=10, r=10, t=50, b=80),
+        hoverlabel=dict(
+            bgcolor="#1e2432",
+            bordercolor="rgba(108,159,255,0.4)",
+            font=dict(color="#e6e9f0", size=12),
+        ),
         xaxis=dict(
-            title=dict(text="行使価格", font=dict(size=11)),
+            title=dict(text="行使価格", font=dict(size=11, color="#8b93a7")),
             tickvals=tick_vals,
             ticktext=[f"{v:,}" for v in tick_vals],
             tickangle=-60,
-            tickfont=dict(size=9),
-            gridcolor="#1a1a1a",
+            tickfont=dict(size=9, color="#8b93a7"),
+            gridcolor="rgba(255,255,255,0.04)",
         ),
         yaxis=dict(
-            title=dict(text="GEX（億円）", font=dict(size=11)),
-            tickfont=dict(size=9),
-            gridcolor="#1a1a1a",
+            title=dict(text="GEX（億円）", font=dict(size=11, color="#8b93a7")),
+            tickfont=dict(size=9, color="#8b93a7"),
+            gridcolor="rgba(255,255,255,0.04)",
             zeroline=False,
         ),
     )
     fig.update_yaxes(
         title_text="累積GEX（億円）",
-        title_font=dict(size=11),
-        tickfont=dict(size=9),
-        gridcolor="#1a1a2a",
+        title_font=dict(size=11, color="#8b93a7"),
+        tickfont=dict(size=9, color="#8b93a7"),
+        gridcolor="rgba(108,159,255,0.06)",
         zeroline=False,
         secondary_y=True,
     )
@@ -494,50 +502,94 @@ def main():
         initial_sidebar_state="collapsed",
     )
 
-    # スマホ対応カスタムCSS
+    # スタイリッシュ・カスタムCSS
     st.markdown("""
     <style>
-    /* 全体フォント */
-    html, body, [class*="css"] { font-family: 'Noto Sans JP', sans-serif; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Noto+Sans+JP:wght@400;500;700&display=swap');
 
-    /* タイトル */
-    h1 { font-size: 1.4rem !important; }
-    h2 { font-size: 1.1rem !important; }
-    h3 { font-size: 1.0rem !important; }
+    html, body, [class*="css"] {
+        font-family: 'Inter', 'Noto Sans JP', sans-serif;
+    }
 
-    /* メトリクスカード */
-    [data-testid="metric-container"] {
-        background: #1a1a2e;
-        border: 1px solid #2d2d4e;
-        border-radius: 10px;
-        padding: 12px 8px;
+    /* Streamlitの余計なUIを隠す */
+    #MainMenu, footer, header { visibility: hidden; }
+    .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
+
+    /* ヒーロータイトル */
+    .hero-title {
+        font-size: 1.6rem;
+        font-weight: 800;
+        background: linear-gradient(90deg, #6C9FFF 0%, #A78BFA 50%, #FF5C7A 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0;
+        letter-spacing: 0.02em;
+    }
+    .hero-sub {
+        color: #8b93a7;
+        font-size: 0.8rem;
+        margin-top: 2px;
+        margin-bottom: 12px;
+    }
+
+    /* メトリクスカード：ガラス風 */
+    [data-testid="stMetric"] {
+        background: linear-gradient(145deg, rgba(30,36,50,0.9), rgba(20,24,34,0.9));
+        border: 1px solid rgba(108,159,255,0.15);
+        border-radius: 14px;
+        padding: 14px 10px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.3);
         text-align: center;
+        transition: border-color 0.2s;
     }
-    [data-testid="metric-container"] label {
-        font-size: 0.7rem !important;
-        color: #aaa !important;
+    [data-testid="stMetric"]:hover { border-color: rgba(108,159,255,0.45); }
+    [data-testid="stMetric"] label {
+        font-size: 0.72rem !important;
+        color: #8b93a7 !important;
+        letter-spacing: 0.05em;
     }
-    [data-testid="metric-container"] [data-testid="stMetricValue"] {
-        font-size: 1.1rem !important;
-        font-weight: bold;
+    [data-testid="stMetricValue"] {
+        font-size: 1.25rem !important;
+        font-weight: 700 !important;
+    }
+    [data-testid="stMetricDelta"] { font-size: 0.75rem !important; }
+
+    /* アラート/情報ボックス */
+    .stAlert {
+        border-radius: 12px;
+        font-size: 0.9rem;
+        border: 1px solid rgba(255,255,255,0.06);
     }
 
-    /* infoボックス */
-    .stAlert { border-radius: 10px; font-size: 0.9rem; }
+    /* エクスパンダー */
+    [data-testid="stExpander"] {
+        border: 1px solid rgba(108,159,255,0.12);
+        border-radius: 12px;
+        background: rgba(22,27,38,0.6);
+    }
 
-    /* スマホでカラム縦並び */
+    /* マルチセレクトのタグ */
+    [data-baseweb="tag"] {
+        background: linear-gradient(90deg, #4C6FFF, #6C9FFF) !important;
+        border-radius: 8px !important;
+    }
+
+    /* 区切り線を薄く */
+    hr { border-color: rgba(255,255,255,0.06) !important; }
+
+    /* スマホ最適化 */
     @media (max-width: 640px) {
-        [data-testid="column"] { min-width: 100% !important; }
-        h1 { font-size: 1.1rem !important; }
+        [data-testid="column"] { min-width: calc(33% - 8px) !important; }
+        .hero-title { font-size: 1.15rem; }
+        [data-testid="stMetricValue"] { font-size: 1.0rem !important; }
+        [data-testid="stMetric"] { padding: 10px 6px; }
+        .block-container { padding-left: 0.8rem; padding-right: 0.8rem; }
     }
-
-    /* サイドバー */
-    [data-testid="stSidebar"] { background: #0e1117; }
     </style>
     """, unsafe_allow_html=True)
 
-    st.title("📊 日経225 GEX ダッシュボード")
-    st.caption("Dealer Gamma Exposure — powered by JPX official data")
+    st.markdown('<div class="hero-title">日経225 GEX ダッシュボード</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-sub">Dealer Gamma Exposure — JPX公式データ × 毎朝自動更新</div>', unsafe_allow_html=True)
 
     today = date.today()
 
@@ -679,7 +731,7 @@ def main():
             ].copy()
             if not iv_df.empty:
                 fig_iv = go.Figure()
-                for opt_type, color in [("call", "#e74c3c"), ("put", "#27ae60")]:
+                for opt_type, color in [("call", "#FF5C7A"), ("put", "#00C896")]:
                     d = iv_df[iv_df["type"] == opt_type].sort_values("strike")
                     fig_iv.add_trace(go.Scatter(
                         x=d["strike"], y=d["iv"] * 100,
@@ -691,8 +743,8 @@ def main():
                 fig_iv.update_layout(
                     title="IVスマイル（清算値より算出）",
                     xaxis_title="行使価格", yaxis_title="IV (%)",
-                    plot_bgcolor="#0e1117", paper_bgcolor="#0e1117",
-                    font_color="#fafafa", height=350,
+                    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                    font_color="#e6e9f0", height=350,
                     xaxis=dict(gridcolor="#2a2a2a"),
                     yaxis=dict(gridcolor="#2a2a2a"),
                 )
