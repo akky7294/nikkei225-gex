@@ -472,15 +472,15 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
         plot_bgcolor="#ffffff",
         paper_bgcolor="rgba(0,0,0,0)",
         font_color="#3a4356",
-        height=500,
+        height=430,
         showlegend=True,
         legend=dict(
-            orientation="h", yanchor="bottom", y=-0.30,
+            orientation="h", yanchor="bottom", y=-0.34,
             xanchor="center", x=0.5,
-            font=dict(size=11, color="#5b6478"),
+            font=dict(size=10, color="#5b6478"),
             bgcolor="rgba(0,0,0,0)",
         ),
-        margin=dict(l=10, r=10, t=45, b=80),
+        margin=dict(l=6, r=6, t=40, b=72),
         hoverlabel=dict(
             bgcolor="#ffffff",
             bordercolor="#c3cde8",
@@ -603,13 +603,47 @@ def main():
     /* 区切り線を薄く */
     hr { border-color: #e9edf7 !important; }
 
+    /* KPIチップバー（1行コンパクト） */
+    .kpi-bar {
+        display: flex; flex-wrap: wrap; gap: 6px;
+        margin: 2px 0 6px 0;
+    }
+    .chip {
+        display: inline-flex; align-items: center; gap: 5px;
+        background: #ffffff;
+        border: 1px solid #e3e8f5;
+        border-radius: 999px;
+        padding: 3px 11px;
+        font-size: 0.78rem;
+        box-shadow: 0 1px 4px rgba(30,50,120,0.06);
+        white-space: nowrap;
+    }
+    .chip b { color: #1a2233; font-size: 0.85rem; }
+    .chip .c-l { color: #8a93a8; font-size: 0.68rem; }
+    .chip-pos { border-color: #b2e6d2; background: #f2fcf8; }
+    .chip-pos b { color: #0a8f62; }
+    .chip-neg { border-color: #ffc9d4; background: #fff5f7; }
+    .chip-neg b { color: #d63955; }
+    .chip-flip { border-color: #ffd9a8; background: #fffaf2; }
+    .chip-flip b { color: #e07c00; }
+    .chip-put b { color: #0a8f62; }
+    .chip-call b { color: #d63955; }
+
+    /* マルチセレクトをコンパクトに */
+    [data-testid="stMultiSelect"] { margin-bottom: 0; }
+    [data-testid="stMultiSelect"] label { font-size: 0.75rem !important; }
+
     /* スマホ最適化 */
     @media (max-width: 640px) {
         [data-testid="column"] { min-width: calc(33% - 8px) !important; }
-        .hero-title { font-size: 1.15rem; }
+        .hero-title { font-size: 1.05rem; }
+        .hero-sub { display: none; }
         [data-testid="stMetricValue"] { font-size: 1.0rem !important; }
         [data-testid="stMetric"] { padding: 10px 6px; }
-        .block-container { padding-left: 0.8rem; padding-right: 0.8rem; }
+        .block-container { padding: 0.5rem 0.6rem 2rem 0.6rem; }
+        .chip { padding: 2px 8px; font-size: 0.7rem; }
+        .chip b { font-size: 0.76rem; }
+        .kpi-bar { gap: 4px; }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -721,10 +755,10 @@ def main():
     expiry_options = list(expiry_label_map.keys())
 
     selected_labels = st.multiselect(
-        "満期日フィルター（複数選択可・未選択=全合算）",
+        "満期（未選択=全合算・Wはウィークリー）",
         options=expiry_options,
         default=[],
-        help="何も選ばないと全満期合算。複数選ぶと選択分を合算して表示。"
+        help="何も選ばないと全満期合算。複数選ぶと選択分を合算。（W）はウィークリー満期。"
     )
 
     if len(selected_labels) == 0:
@@ -736,16 +770,19 @@ def main():
     result = build_gex_chart(gex_df, spot, selected_expiry, oi_threshold)
     fig, net_total, gamma_flip, put_wall, call_wall = result
 
-    # KPIメトリクス（スマホ対応：2行に分ける）
-    col1, col2, col3 = st.columns(3)
-    col1.metric("📈 現値", f"{spot:,.0f}")
-    col2.metric("Net GEX", f"{net_total/1e8:.1f} 億円",
-        delta="▲ Long Gamma" if net_total > 0 else "▼ Short Gamma")
-    col3.metric("⚡ ガンマフリップ", f"{gamma_flip:,.0f}" if gamma_flip else "N/A")
-
-    col4, col5 = st.columns(2)
-    col4.metric("🟢 プットウォール", f"{put_wall:,.0f}" if put_wall else "N/A")
-    col5.metric("🔴 コールウォール", f"{call_wall:,.0f}" if call_wall else "N/A")
+    # KPIチップ（1行コンパクト表示）
+    net_cls = "chip-pos" if net_total > 0 else "chip-neg"
+    net_label = "Long γ" if net_total > 0 else "Short γ"
+    chips = f'''
+    <div class="kpi-bar">
+      <span class="chip"><span class="c-l">現値</span><b>{spot:,.0f}</b></span>
+      <span class="chip {net_cls}"><span class="c-l">Net</span><b>{net_total/1e8:,.0f}億</b><span class="c-l">{net_label}</span></span>
+      <span class="chip chip-flip"><span class="c-l">GFlip</span><b>{f"{gamma_flip:,.0f}" if gamma_flip else "—"}</b></span>
+      <span class="chip chip-put"><span class="c-l">P壁</span><b>{f"{put_wall:,.0f}" if put_wall else "—"}</b></span>
+      <span class="chip chip-call"><span class="c-l">C壁</span><b>{f"{call_wall:,.0f}" if call_wall else "—"}</b></span>
+    </div>
+    '''
+    st.markdown(chips, unsafe_allow_html=True)
 
     if fig:
         st.plotly_chart(fig, use_container_width=True)
