@@ -487,8 +487,57 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
 # ─── Streamlit UI ─────────────────────────────────────────────────────────────
 
 def main():
-    st.title("📊 日経225 Gamma Exposure ビジュアライザー")
-    st.caption("ディーラーのガンマエクスポージャー分布を可視化 — Dealer GEX Analysis")
+    st.set_page_config(
+        page_title="日経225 GEX",
+        page_icon="📊",
+        layout="wide",
+        initial_sidebar_state="collapsed",
+    )
+
+    # スマホ対応カスタムCSS
+    st.markdown("""
+    <style>
+    /* 全体フォント */
+    html, body, [class*="css"] { font-family: 'Noto Sans JP', sans-serif; }
+
+    /* タイトル */
+    h1 { font-size: 1.4rem !important; }
+    h2 { font-size: 1.1rem !important; }
+    h3 { font-size: 1.0rem !important; }
+
+    /* メトリクスカード */
+    [data-testid="metric-container"] {
+        background: #1a1a2e;
+        border: 1px solid #2d2d4e;
+        border-radius: 10px;
+        padding: 12px 8px;
+        text-align: center;
+    }
+    [data-testid="metric-container"] label {
+        font-size: 0.7rem !important;
+        color: #aaa !important;
+    }
+    [data-testid="metric-container"] [data-testid="stMetricValue"] {
+        font-size: 1.1rem !important;
+        font-weight: bold;
+    }
+
+    /* infoボックス */
+    .stAlert { border-radius: 10px; font-size: 0.9rem; }
+
+    /* スマホでカラム縦並び */
+    @media (max-width: 640px) {
+        [data-testid="column"] { min-width: 100% !important; }
+        h1 { font-size: 1.1rem !important; }
+    }
+
+    /* サイドバー */
+    [data-testid="stSidebar"] { background: #0e1117; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.title("📊 日経225 GEX ダッシュボード")
+    st.caption("Dealer Gamma Exposure — powered by JPX official data")
 
     today = date.today()
 
@@ -604,16 +653,16 @@ def main():
     result = build_gex_chart(gex_df, spot, selected_expiry, oi_threshold)
     fig, net_total, gamma_flip, put_wall, call_wall = result
 
-    # KPIメトリクス
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric(
-        "Net GEX", f"{net_total/1e8:.1f} 億円",
-        delta="Long Gamma" if net_total > 0 else "Short Gamma"
-    )
-    col2.metric("現値", f"{spot:,.0f}")
-    col3.metric("ガンマフリップ", f"{gamma_flip:,.0f}" if gamma_flip else "N/A")
-    col4.metric("プットウォール", f"{put_wall:,.0f}" if put_wall else "N/A")
-    col5.metric("コールウォール", f"{call_wall:,.0f}" if call_wall else "N/A")
+    # KPIメトリクス（スマホ対応：2行に分ける）
+    col1, col2, col3 = st.columns(3)
+    col1.metric("📈 現値", f"{spot:,.0f}")
+    col2.metric("Net GEX", f"{net_total/1e8:.1f} 億円",
+        delta="▲ Long Gamma" if net_total > 0 else "▼ Short Gamma")
+    col3.metric("⚡ ガンマフリップ", f"{gamma_flip:,.0f}" if gamma_flip else "N/A")
+
+    col4, col5 = st.columns(2)
+    col4.metric("🟢 プットウォール", f"{put_wall:,.0f}" if put_wall else "N/A")
+    col5.metric("🔴 コールウォール", f"{call_wall:,.0f}" if call_wall else "N/A")
 
     if fig:
         st.plotly_chart(fig, use_container_width=True)
