@@ -122,20 +122,22 @@ def implied_vol(S, K, T, r, market_price, option_type="call", default=0.20):
 # ─── GEX計算 ─────────────────────────────────────────────────────────────────
 
 def calculate_gex(df: pd.DataFrame, spot: float, r: float = 0.001) -> pd.DataFrame:
-    MULTIPLIER = 1000
     MAX_OI = 500_000  # 50万枚超は誤読データとして除外
     records = []
     for _, row in df.iterrows():
         if row["oi"] > MAX_OI:
             continue  # パーサーの誤読（金額等を誤取得）をスキップ
+        # 乗数: 通常オプション ¥1,000 / ミニオプション ¥100
+        multiplier = 100 if row.get("product") == "mini" else 1000
         T = row["days_to_expiry"] / 365.0
         gamma = bs_gamma(spot, row["strike"], T, r, row["iv"])
-        gex = gamma * row["oi"] * MULTIPLIER * spot
+        gex = gamma * row["oi"] * multiplier * spot
         sign = 1 if row["type"] == "call" else -1
         records.append({
             "strike": row["strike"],
             "expiry": row["expiry"],
             "type": row["type"],
+            "product": row.get("product", "regular"),
             "gex": sign * gex,
             "call_gex": gex if row["type"] == "call" else 0,
             "put_gex": -gex if row["type"] == "put" else 0,
@@ -153,13 +155,29 @@ def parse_jpx_pdf(raw: bytes, today: date, spot: float, r: float) -> pd.DataFram
         st.error("pdfplumberが必要です。")
         return pd.DataFrame()
 
-    row_pattern = re.compile(r'(20\d{4})\s+(\d{2}\.\d{2})\s+([\d,]+)\s+\d{6,12}(.*)')
+    # 通常225オプション: 限月6桁 + 取引最終日(mm.dd)
+    reg_pattern = re.compile(r'(20\d{4})\s+(\d{2}\.\d{2})\s+([\d,]+)\s+\d{6,12}(.*)')
+    # ミニオプション(ウィークリー): 限月8桁 = 満期日そのもの
+    mini_pattern = re.compile(r'(20\d{6})\s+(\d{2}\.\d{2})\s+([\d,]+)\s+\d{6,12}(.*)')
     records = []
     current_type = None
 
     with pdfplumber.open(io.BytesIO(raw)) as pdf:
         for page in pdf.pages:
             text = page.extract_text() or ""
+            # J-NET（立会外）市場ページは建玉が重複するため除外
+            if "J-NETMarket" in text or "J-NET市場" in text:
+                continue
+
+            # ページ先頭の商品名行で対象商品を判定（TOPIX等は除外）
+            heads = [l.strip() for l in text.split("\n")[:6]]
+            if "Nikkei225miniOptions" in heads:
+                product = "mini"
+            elif "Nikkei225Options" in heads:
+                product = "regular"
+            else:
+                continue
+
             if "PutOptions" in text:
                 current_type = "put"
             if "CallOptions" in text:
@@ -167,11 +185,13 @@ def parse_jpx_pdf(raw: bytes, today: date, spot: float, r: float) -> pd.DataFram
             if current_type is None:
                 continue
 
+            pattern = mini_pattern if product == "mini" else reg_pattern
+
             for line in text.split("\n"):
-                m = row_pattern.match(line.strip())
+                m = pattern.match(line.strip())
                 if not m:
                     continue
-                contract_ym = m.group(1)
+                contract = m.group(1)
                 exp_md = m.group(2)
                 strike_str = m.group(3).replace(",", "")
                 rest = m.group(4).strip().split()
@@ -199,11 +219,15 @@ def parse_jpx_pdf(raw: bytes, today: date, spot: float, r: float) -> pd.DataFram
                     except ValueError:
                         pass
 
-                year = int(contract_ym[:4])
                 try:
-                    exp_month = int(exp_md.split(".")[0])
-                    exp_day = int(exp_md.split(".")[1])
-                    expiry = date(year, exp_month, exp_day)
+                    if product == "mini":
+                        # 8桁限月 = 満期日 (例: 20260703)
+                        expiry = date(int(contract[:4]), int(contract[4:6]), int(contract[6:8]))
+                    else:
+                        year = int(contract[:4])
+                        exp_month = int(exp_md.split(".")[0])
+                        exp_day = int(exp_md.split(".")[1])
+                        expiry = date(year, exp_month, exp_day)
                 except (ValueError, IndexError):
                     continue
 
@@ -218,6 +242,7 @@ def parse_jpx_pdf(raw: bytes, today: date, spot: float, r: float) -> pd.DataFram
                     "strike": strike,
                     "expiry": pd.Timestamp(expiry),
                     "type": current_type,
+                    "product": product,
                     "oi": oi,
                     "iv": iv,
                     "days_to_expiry": days,
@@ -685,9 +710,14 @@ def main():
     # GEX計算
     gex_df = calculate_gex(options_df, spot, risk_free)
 
-    # 満期フィルター（複数選択可）
+    # 満期フィルター（複数選択可・ウィークリー満期には W マーク）
     expiries = sorted(gex_df["expiry"].unique())
-    expiry_label_map = {pd.Timestamp(e).strftime("%Y/%m/%d"): e for e in expiries}
+    expiry_label_map = {}
+    for e in expiries:
+        rows = gex_df[gex_df["expiry"] == e]
+        is_weekly_only = "product" in rows.columns and (rows["product"] == "mini").all()
+        label = pd.Timestamp(e).strftime("%Y/%m/%d") + ("（W）" if is_weekly_only else "")
+        expiry_label_map[label] = e
     expiry_options = list(expiry_label_map.keys())
 
     selected_labels = st.multiselect(

@@ -64,13 +64,29 @@ def parse_pdf(raw: bytes, today: date, spot: float = 38500, r: float = 0.001):
     except ImportError:
         raise RuntimeError("pdfplumber is required: pip install pdfplumber")
 
-    row_pattern = re.compile(r"(20\d{4})\s+(\d{2}\.\d{2})\s+([\d,]+)\s+\d{6,12}(.*)")
+    # 通常225オプション: 限月6桁 + 取引最終日(mm.dd)
+    reg_pattern = re.compile(r"(20\d{4})\s+(\d{2}\.\d{2})\s+([\d,]+)\s+\d{6,12}(.*)")
+    # ミニオプション(ウィークリー): 限月8桁 = 満期日そのもの
+    mini_pattern = re.compile(r"(20\d{6})\s+(\d{2}\.\d{2})\s+([\d,]+)\s+\d{6,12}(.*)")
     records = []
     current_type = None
 
     with pdfplumber.open(io.BytesIO(raw)) as pdf:
         for page in pdf.pages:
             text = page.extract_text() or ""
+            # J-NET（立会外）市場ページは建玉が重複するため除外
+            if "J-NETMarket" in text or "J-NET市場" in text:
+                continue
+
+            # ページ先頭の商品名行で対象商品を判定（TOPIX等は除外）
+            heads = [l.strip() for l in text.split("\n")[:6]]
+            if "Nikkei225miniOptions" in heads:
+                product = "mini"
+            elif "Nikkei225Options" in heads:
+                product = "regular"
+            else:
+                continue
+
             if "PutOptions" in text:
                 current_type = "put"
             if "CallOptions" in text:
@@ -78,11 +94,13 @@ def parse_pdf(raw: bytes, today: date, spot: float = 38500, r: float = 0.001):
             if current_type is None:
                 continue
 
+            pattern = mini_pattern if product == "mini" else reg_pattern
+
             for line in text.split("\n"):
-                m = row_pattern.match(line.strip())
+                m = pattern.match(line.strip())
                 if not m:
                     continue
-                contract_ym = m.group(1)
+                contract = m.group(1)
                 exp_md = m.group(2)
                 strike_str = m.group(3).replace(",", "")
                 rest = m.group(4).strip().split()
@@ -110,11 +128,15 @@ def parse_pdf(raw: bytes, today: date, spot: float = 38500, r: float = 0.001):
                     except ValueError:
                         pass
 
-                year = int(contract_ym[:4])
                 try:
-                    exp_month = int(exp_md.split(".")[0])
-                    exp_day = int(exp_md.split(".")[1])
-                    expiry = date(year, exp_month, exp_day)
+                    if product == "mini":
+                        # 8桁限月 = 満期日 (例: 20260703)
+                        expiry = date(int(contract[:4]), int(contract[4:6]), int(contract[6:8]))
+                    else:
+                        year = int(contract[:4])
+                        exp_month = int(exp_md.split(".")[0])
+                        exp_day = int(exp_md.split(".")[1])
+                        expiry = date(year, exp_month, exp_day)
                 except (ValueError, IndexError):
                     continue
 
@@ -130,6 +152,7 @@ def parse_pdf(raw: bytes, today: date, spot: float = 38500, r: float = 0.001):
                     "strike": strike,
                     "expiry": expiry.isoformat(),
                     "type": current_type,
+                    "product": product,
                     "oi": oi,
                     "iv": round(iv, 4),
                     "days_to_expiry": days,
@@ -140,7 +163,8 @@ def parse_pdf(raw: bytes, today: date, spot: float = 38500, r: float = 0.001):
         raise RuntimeError("No data extracted from PDF")
 
     df = pd.DataFrame(records)
-    print(f"Parsed {len(df)} rows (Call:{len(df[df.type=='call'])} / Put:{len(df[df.type=='put'])})")
+    n_mini = len(df[df["product"] == "mini"])
+    print(f"Parsed {len(df)} rows (Call:{len(df[df.type=='call'])} / Put:{len(df[df.type=='put'])} / mini(Weekly):{n_mini})")
     return df
 
 
