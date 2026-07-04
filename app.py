@@ -399,12 +399,12 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
         )
 
     # ── 現値ライン（グレー破線・上に数値）──
-    fig.add_vline(x=spot, line_width=1.5, line_dash="dash", line_color="#9aa3b5")
+    fig.add_vline(x=spot, line_width=1.5, line_dash="dash", line_color="#6b7280")
     fig.add_annotation(
         x=spot, y=1.06, yref="paper",
         text=f"<b>{spot:,.0f}</b>",
         showarrow=False,
-        font=dict(color="#c3cad9", size=12),
+        font=dict(color="#3a4356", size=12),
     )
 
     # ── コールウォール（矢印付きラベル）──
@@ -432,52 +432,55 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
     )
 
     # ── ゼロライン（破線）──
-    fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="rgba(255,255,255,0.3)", secondary_y=False)
+    fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="rgba(0,0,0,0.3)", secondary_y=False)
 
-    # x軸ティック
+    # x軸ティック（範囲に応じて間隔を自動調整 → 目盛りが詰まらない）
     x_min = int(agg["strike"].min())
     x_max = int(agg["strike"].max())
-    tick_vals = list(range(round(x_min / 500) * 500, round(x_max / 500) * 500 + 500, 500))
+    x_range = x_max - x_min
+    tick_step = max(500, int(round(x_range / 12 / 500)) * 500)  # 目盛りは12本前後に
+    tick_vals = list(range(round(x_min / tick_step) * tick_step,
+                           round(x_max / tick_step) * tick_step + tick_step, tick_step))
 
     fig.update_layout(
         barmode="overlay",
-        plot_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#ffffff",
         paper_bgcolor="rgba(0,0,0,0)",
-        font_color="#e6e9f0",
+        font_color="#3a4356",
         height=500,
         showlegend=True,
         legend=dict(
             orientation="h", yanchor="bottom", y=-0.30,
             xanchor="center", x=0.5,
-            font=dict(size=11, color="#8b93a7"),
+            font=dict(size=11, color="#5b6478"),
             bgcolor="rgba(0,0,0,0)",
         ),
         margin=dict(l=10, r=10, t=45, b=80),
         hoverlabel=dict(
-            bgcolor="#1e2432",
-            bordercolor="rgba(108,159,255,0.4)",
-            font=dict(color="#e6e9f0", size=12),
+            bgcolor="#ffffff",
+            bordercolor="#c3cde8",
+            font=dict(color="#1a2233", size=12),
         ),
         xaxis=dict(
-            title=dict(text="行使価格", font=dict(size=11, color="#8b93a7")),
+            title=dict(text="行使価格", font=dict(size=11, color="#5b6478")),
             tickvals=tick_vals,
             ticktext=[f"{v:,}" for v in tick_vals],
-            tickangle=-60,
-            tickfont=dict(size=9, color="#8b93a7"),
-            gridcolor="rgba(255,255,255,0.04)",
+            tickangle=-45,
+            tickfont=dict(size=11, color="#3a4356"),
+            gridcolor="rgba(0,0,0,0.05)",
         ),
         yaxis=dict(
-            title=dict(text="GEX（億円）", font=dict(size=11, color="#8b93a7")),
-            tickfont=dict(size=9, color="#8b93a7"),
-            gridcolor="rgba(255,255,255,0.04)",
+            title=dict(text="GEX（億円）", font=dict(size=11, color="#5b6478")),
+            tickfont=dict(size=11, color="#3a4356"),
+            gridcolor="rgba(0,0,0,0.05)",
             zeroline=False,
         ),
     )
     fig.update_yaxes(
         title_text="累積GEX（億円）",
-        title_font=dict(size=11, color="#8b93a7"),
-        tickfont=dict(size=9, color="#8b93a7"),
-        gridcolor="rgba(108,159,255,0.06)",
+        title_font=dict(size=11, color="#4C6FFF"),
+        tickfont=dict(size=11, color="#4C6FFF"),
+        gridcolor="rgba(76,111,255,0.07)",
         zeroline=False,
         secondary_y=True,
     )
@@ -525,25 +528,29 @@ def main():
         margin-bottom: 12px;
     }
 
-    /* メトリクスカード：ガラス風 */
+    /* メトリクスカード：白ベースのソフトカード */
     [data-testid="stMetric"] {
-        background: linear-gradient(145deg, rgba(30,36,50,0.9), rgba(20,24,34,0.9));
-        border: 1px solid rgba(108,159,255,0.15);
+        background: #ffffff;
+        border: 1px solid #e3e8f5;
         border-radius: 14px;
         padding: 14px 10px;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+        box-shadow: 0 2px 10px rgba(30,50,120,0.07);
         text-align: center;
-        transition: border-color 0.2s;
+        transition: box-shadow 0.2s, border-color 0.2s;
     }
-    [data-testid="stMetric"]:hover { border-color: rgba(108,159,255,0.45); }
+    [data-testid="stMetric"]:hover {
+        border-color: #b9c6f5;
+        box-shadow: 0 4px 16px rgba(30,50,120,0.13);
+    }
     [data-testid="stMetric"] label {
         font-size: 0.72rem !important;
-        color: #8b93a7 !important;
+        color: #6b7690 !important;
         letter-spacing: 0.05em;
     }
     [data-testid="stMetricValue"] {
         font-size: 1.25rem !important;
         font-weight: 700 !important;
+        color: #1a2233 !important;
     }
     [data-testid="stMetricDelta"] { font-size: 0.75rem !important; }
 
@@ -551,24 +558,25 @@ def main():
     .stAlert {
         border-radius: 12px;
         font-size: 0.9rem;
-        border: 1px solid rgba(255,255,255,0.06);
+        border: 1px solid rgba(0,0,0,0.05);
     }
 
     /* エクスパンダー */
     [data-testid="stExpander"] {
-        border: 1px solid rgba(108,159,255,0.12);
+        border: 1px solid #e3e8f5;
         border-radius: 12px;
-        background: rgba(22,27,38,0.6);
+        background: #fafbfe;
     }
 
     /* マルチセレクトのタグ */
     [data-baseweb="tag"] {
         background: linear-gradient(90deg, #4C6FFF, #6C9FFF) !important;
         border-radius: 8px !important;
+        color: #fff !important;
     }
 
     /* 区切り線を薄く */
-    hr { border-color: rgba(255,255,255,0.06) !important; }
+    hr { border-color: #e9edf7 !important; }
 
     /* スマホ最適化 */
     @media (max-width: 640px) {
@@ -736,10 +744,10 @@ def main():
                 fig_iv.update_layout(
                     title="IVスマイル（清算値より算出）",
                     xaxis_title="行使価格", yaxis_title="IV (%)",
-                    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                    font_color="#e6e9f0", height=350,
-                    xaxis=dict(gridcolor="#2a2a2a"),
-                    yaxis=dict(gridcolor="#2a2a2a"),
+                    plot_bgcolor="#ffffff", paper_bgcolor="rgba(0,0,0,0)",
+                    font_color="#3a4356", height=350,
+                    xaxis=dict(gridcolor="rgba(0,0,0,0.06)"),
+                    yaxis=dict(gridcolor="rgba(0,0,0,0.06)"),
                 )
                 st.plotly_chart(fig_iv, use_container_width=True)
 
