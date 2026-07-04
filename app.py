@@ -326,25 +326,24 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
 
     strikes = agg["strike"].tolist()
 
-    # ── 背景ゾーン（正=薄緑, 負=薄赤）──
-    flip_idx = None
+    # ── 背景ゾーン（Tiger風：ガンマフリップで左右にパキッと分割）──
+    GREEN_BG = "rgba(0,200,150,0.07)"
+    PINK_BG = "rgba(255,92,122,0.07)"
+    x_lo = agg["strike"].min() - 125
+    x_hi = agg["strike"].max() + 125
+
     if gamma_flip is not None:
-        flip_idx = agg[agg["strike"] == gamma_flip].index[0] if gamma_flip in agg["strike"].values else None
-
-    # 正ゾーン
-    pos_zone = agg[agg["agg_gex"] >= 0]
-    neg_zone = agg[agg["agg_gex"] < 0]
-
-    for zone_df, fillcolor in [(pos_zone, "rgba(0,200,150,0.06)"), (neg_zone, "rgba(255,92,122,0.06)")]:
-        if not zone_df.empty:
-            x0 = zone_df["strike"].min() - 125
-            x1 = zone_df["strike"].max() + 125
-            fig.add_vrect(
-                x0=x0, x1=x1,
-                fillcolor=fillcolor,
-                layer="below",
-                line_width=0,
-            )
+        # フリップの左側の累積GEXの符号でゾーン色を決める
+        left_side = agg[agg["strike"] < gamma_flip]
+        left_positive = (not left_side.empty) and (left_side["agg_gex"].mean() >= 0)
+        left_color = GREEN_BG if left_positive else PINK_BG
+        right_color = PINK_BG if left_positive else GREEN_BG
+        fig.add_vrect(x0=x_lo, x1=gamma_flip, fillcolor=left_color, layer="below", line_width=0)
+        fig.add_vrect(x0=gamma_flip, x1=x_hi, fillcolor=right_color, layer="below", line_width=0)
+    else:
+        # フリップなし＝全域同一符号
+        whole_color = GREEN_BG if agg["agg_gex"].mean() >= 0 else PINK_BG
+        fig.add_vrect(x0=x_lo, x1=x_hi, fillcolor=whole_color, layer="below", line_width=0)
 
     # ── プットGEX バー（緑）──
     fig.add_trace(
@@ -354,7 +353,8 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             name="プット GEX",
             marker_color="#00C896",
             marker_line_width=0,
-            opacity=0.9,
+            width=110,
+            opacity=0.95,
             hovertemplate="Strike: %{x:,.0f}<br>Put GEX: %{y:.1f} 億円<extra></extra>",
         ),
         secondary_y=False,
@@ -368,7 +368,8 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             name="コール GEX",
             marker_color="#FF5C7A",
             marker_line_width=0,
-            opacity=0.9,
+            width=110,
+            opacity=0.95,
             hovertemplate="Strike: %{x:,.0f}<br>Call GEX: %{y:.1f} 億円<extra></extra>",
         ),
         secondary_y=False,
@@ -387,50 +388,51 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
         secondary_y=True,
     )
 
-    # ── 現値ライン ──
-    fig.add_vline(
-        x=spot,
-        line_width=2, line_dash="solid", line_color="#FFB020",
-        annotation_text=f"現値<br>{spot:,.0f}",
-        annotation_font_color="#FFB020",
-        annotation_font_size=10,
-        annotation_position="top right",
-    )
-
-    # ── ガンマフリップライン ──
+    # ── ガンマフリップライン（オレンジ実線・上に数値）──
     if gamma_flip:
-        fig.add_vline(
-            x=gamma_flip,
-            line_width=1.5, line_dash="dash", line_color="#A78BFA",
-            annotation_text=f"GFlip<br>{gamma_flip:,.0f}",
-            annotation_font_color="#A78BFA",
-            annotation_font_size=9,
-            annotation_position="top left",
+        fig.add_vline(x=gamma_flip, line_width=2, line_color="#FF8A00")
+        fig.add_annotation(
+            x=gamma_flip, y=1.06, yref="paper",
+            text=f"<b>{gamma_flip:,.0f}</b>",
+            showarrow=False,
+            font=dict(color="#FF8A00", size=12),
         )
 
-    # ── プットウォール ──
-    pw_y = float(agg.loc[put_wall_idx, "put_gex"]) / unit
+    # ── 現値ライン（グレー破線・上に数値）──
+    fig.add_vline(x=spot, line_width=1.5, line_dash="dash", line_color="#9aa3b5")
     fig.add_annotation(
-        x=put_wall, y=pw_y,
-        text=f"▲P壁<br>{put_wall:,.0f}",
+        x=spot, y=1.06, yref="paper",
+        text=f"<b>{spot:,.0f}</b>",
         showarrow=False,
-        font=dict(color="#00C896", size=10),
-        yanchor="top" if pw_y < 0 else "bottom",
+        font=dict(color="#c3cad9", size=12),
     )
 
-    # ── コールウォール ──
+    # ── コールウォール（矢印付きラベル）──
     cw_y = float(agg.loc[call_wall_idx, "call_gex"]) / unit
     fig.add_annotation(
         x=call_wall, y=cw_y,
-        text=f"▼C壁<br>{call_wall:,.0f}",
-        showarrow=False,
-        font=dict(color="#FF5C7A", size=10),
-        yanchor="bottom" if cw_y > 0 else "top",
+        text=f"コールウォール {call_wall:,.0f}",
+        showarrow=True,
+        arrowhead=2, arrowsize=1, arrowwidth=1.5,
+        arrowcolor="#FF5C7A",
+        ax=0, ay=-32,
+        font=dict(color="#FF5C7A", size=11),
     )
 
-    # ── ゼロライン ──
-    fig.add_hline(y=0, line_width=1, line_color="rgba(255,255,255,0.25)", secondary_y=False)
-    fig.add_hline(y=0, line_width=0.5, line_color="rgba(108,159,255,0.3)", line_dash="dot", secondary_y=True)
+    # ── プットウォール（矢印付きラベル）──
+    pw_y = float(agg.loc[put_wall_idx, "put_gex"]) / unit
+    fig.add_annotation(
+        x=put_wall, y=pw_y,
+        text=f"プットウォール {put_wall:,.0f}",
+        showarrow=True,
+        arrowhead=2, arrowsize=1, arrowwidth=1.5,
+        arrowcolor="#00C896",
+        ax=0, ay=32,
+        font=dict(color="#00C896", size=11),
+    )
+
+    # ── ゼロライン（破線）──
+    fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="rgba(255,255,255,0.3)", secondary_y=False)
 
     # x軸ティック
     x_min = int(agg["strike"].min())
@@ -438,15 +440,6 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
     tick_vals = list(range(round(x_min / 500) * 500, round(x_max / 500) * 500 + 500, 500))
 
     fig.update_layout(
-        title=dict(
-            text=(
-                f"日経225 GEX  現値: {spot:,.0f}  Net: {net_total/unit:.1f} 億円"
-                + ("  |  全満期合算" if selected_expiry == "全満期合算"
-                   else ("  |  " + " + ".join([pd.Timestamp(e).strftime("%m/%d") for e in selected_expiry])) if isinstance(selected_expiry, list)
-                   else f"  |  {pd.Timestamp(selected_expiry).strftime('%Y/%m/%d')}")
-            ),
-            font=dict(size=13),
-        ),
         barmode="overlay",
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -459,7 +452,7 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             font=dict(size=11, color="#8b93a7"),
             bgcolor="rgba(0,0,0,0)",
         ),
-        margin=dict(l=10, r=10, t=50, b=80),
+        margin=dict(l=10, r=10, t=45, b=80),
         hoverlabel=dict(
             bgcolor="#1e2432",
             bordercolor="rgba(108,159,255,0.4)",
