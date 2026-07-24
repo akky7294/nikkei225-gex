@@ -540,8 +540,10 @@ def main():
         font-family: 'Inter', 'Noto Sans JP', sans-serif;
     }
 
-    /* Streamlitの余計なUIを隠す */
-    #MainMenu, footer, header { visibility: hidden; }
+    /* Streamlitの余計なUIを隠す（サイドバー開閉ボタンは残す） */
+    #MainMenu, footer { visibility: hidden; }
+    [data-testid="stToolbar"] { visibility: hidden; }
+    header[data-testid="stHeader"] { background: transparent; }
     .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
 
     /* ヒーロータイトル */
@@ -696,12 +698,6 @@ def main():
             help="建玉がこの枚数未満のストライクを除外",
         )
 
-        unit_mode = st.radio(
-            "GEX表示単位",
-            ["1%変動あたり", "1ポイントあたり"],
-            index=0,
-            help="1%変動＝SpotGamma流（数百〜数千億円規模）/ 1ポイント＝SqueezeMetrics流（数億〜数十億円規模）。同じデータの単位違いです。",
-        )
 
         st.divider()
         st.subheader("データソース")
@@ -782,6 +778,15 @@ def main():
         selected_expiry = [expiry_label_map[l] for l in selected_labels]
 
     # チャート描画
+    # GEX表示単位（メイン画面に配置）
+    unit_mode = st.radio(
+        "GEX単位",
+        ["1%変動あたり", "1ポイントあたり"],
+        index=0,
+        horizontal=True,
+        help="1%変動＝SpotGamma流（数百〜数千億円規模）/ 1ポイント＝SqueezeMetrics流（数億〜数十億円規模）。同じデータの単位違いです。",
+    )
+
     # 表示単位の変換（計算は1%ベース → 1ptは1/(spot×0.01)倍）
     if unit_mode == "1ポイントあたり":
         for c in ["gex", "call_gex", "put_gex"]:
