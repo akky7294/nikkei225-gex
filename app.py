@@ -291,7 +291,7 @@ def generate_demo_data(spot: float, today: date) -> pd.DataFrame:
 
 # ─── メインチャート描画 ───────────────────────────────────────────────────────
 
-def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_threshold: int):
+def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_threshold: int, unit_label: str = "1%"):
     """
     Tiger Brokers風GEXチャート:
     - コール(赤バー) / プット(緑バー) を別々に表示
@@ -388,7 +388,7 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             marker_line_width=0,
             width=110,
             opacity=0.95,
-            hovertemplate="Strike: %{x:,.0f}<br>Put GEX: %{y:,.0f} 億円/1%<extra></extra>",
+            hovertemplate=f"Strike: %{{x:,.0f}}<br>Put GEX: %{{y:,.0f}} 億円/{unit_label}<extra></extra>",
         ),
         secondary_y=False,
     )
@@ -403,7 +403,7 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             marker_line_width=0,
             width=110,
             opacity=0.95,
-            hovertemplate="Strike: %{x:,.0f}<br>Call GEX: %{y:,.0f} 億円/1%<extra></extra>",
+            hovertemplate=f"Strike: %{{x:,.0f}}<br>Call GEX: %{{y:,.0f}} 億円/{unit_label}<extra></extra>",
         ),
         secondary_y=False,
     )
@@ -416,7 +416,7 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             name="アグリゲートGEX",
             mode="lines",
             line=dict(color="#6C9FFF", width=2.5),
-            hovertemplate="Strike: %{x:,.0f}<br>Aggregate GEX: %{y:,.0f} 億円/1%<extra></extra>",
+            hovertemplate=f"Strike: %{{x:,.0f}}<br>Aggregate GEX: %{{y:,.0f}} 億円/{unit_label}<extra></extra>",
         ),
         secondary_y=True,
     )
@@ -503,14 +503,14 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             gridcolor="rgba(0,0,0,0.05)",
         ),
         yaxis=dict(
-            title=dict(text="GEX（億円/1%変動）", font=dict(size=11, color="#5b6478")),
+            title=dict(text=f"GEX（億円/{unit_label}変動）", font=dict(size=11, color="#5b6478")),
             tickfont=dict(size=11, color="#3a4356"),
             gridcolor="rgba(0,0,0,0.05)",
             zeroline=False,
         ),
     )
     fig.update_yaxes(
-        title_text="累積GEX（億円/1%変動）",
+        title_text=f"累積GEX（億円/{unit_label}変動）",
         title_font=dict(size=11, color="#4C6FFF"),
         tickfont=dict(size=11, color="#4C6FFF"),
         gridcolor="rgba(76,111,255,0.07)",
@@ -696,6 +696,13 @@ def main():
             help="建玉がこの枚数未満のストライクを除外",
         )
 
+        unit_mode = st.radio(
+            "GEX表示単位",
+            ["1%変動あたり", "1ポイントあたり"],
+            index=0,
+            help="1%変動＝SpotGamma流（数百〜数千億円規模）/ 1ポイント＝SqueezeMetrics流（数億〜数十億円規模）。同じデータの単位違いです。",
+        )
+
         st.divider()
         st.subheader("データソース")
         data_mode = st.radio("モード選択", ["最新データ（自動）", "JPX PDFアップロード", "デモデータ"])
@@ -775,7 +782,15 @@ def main():
         selected_expiry = [expiry_label_map[l] for l in selected_labels]
 
     # チャート描画
-    result = build_gex_chart(gex_df, spot, selected_expiry, oi_threshold)
+    # 表示単位の変換（計算は1%ベース → 1ptは1/(spot×0.01)倍）
+    if unit_mode == "1ポイントあたり":
+        for c in ["gex", "call_gex", "put_gex"]:
+            gex_df[c] = gex_df[c] / (spot * 0.01)
+        unit_label = "1pt"
+    else:
+        unit_label = "1%"
+
+    result = build_gex_chart(gex_df, spot, selected_expiry, oi_threshold, unit_label)
     fig, net_total, gamma_flip, put_wall, call_wall = result
 
     # KPIチップ（1行コンパクト表示）
