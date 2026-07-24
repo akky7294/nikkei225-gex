@@ -131,7 +131,8 @@ def calculate_gex(df: pd.DataFrame, spot: float, r: float = 0.001) -> pd.DataFra
         multiplier = 100 if row.get("product") == "mini" else 1000
         T = row["days_to_expiry"] / 365.0
         gamma = bs_gamma(spot, row["strike"], T, r, row["iv"])
-        gex = gamma * row["oi"] * multiplier * spot
+        # 標準GEX: 指数が1%動いたときのディーラーのデルタ変化額（円）
+        gex = gamma * row["oi"] * multiplier * spot**2 * 0.01
         sign = 1 if row["type"] == "call" else -1
         records.append({
             "strike": row["strike"],
@@ -387,7 +388,7 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             marker_line_width=0,
             width=110,
             opacity=0.95,
-            hovertemplate="Strike: %{x:,.0f}<br>Put GEX: %{y:.1f} 億円<extra></extra>",
+            hovertemplate="Strike: %{x:,.0f}<br>Put GEX: %{y:,.0f} 億円/1%<extra></extra>",
         ),
         secondary_y=False,
     )
@@ -402,7 +403,7 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             marker_line_width=0,
             width=110,
             opacity=0.95,
-            hovertemplate="Strike: %{x:,.0f}<br>Call GEX: %{y:.1f} 億円<extra></extra>",
+            hovertemplate="Strike: %{x:,.0f}<br>Call GEX: %{y:,.0f} 億円/1%<extra></extra>",
         ),
         secondary_y=False,
     )
@@ -415,7 +416,7 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             name="アグリゲートGEX",
             mode="lines",
             line=dict(color="#6C9FFF", width=2.5),
-            hovertemplate="Strike: %{x:,.0f}<br>Aggregate GEX: %{y:.1f} 億円<extra></extra>",
+            hovertemplate="Strike: %{x:,.0f}<br>Aggregate GEX: %{y:,.0f} 億円/1%<extra></extra>",
         ),
         secondary_y=True,
     )
@@ -502,14 +503,14 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             gridcolor="rgba(0,0,0,0.05)",
         ),
         yaxis=dict(
-            title=dict(text="GEX（億円）", font=dict(size=11, color="#5b6478")),
+            title=dict(text="GEX（億円/1%変動）", font=dict(size=11, color="#5b6478")),
             tickfont=dict(size=11, color="#3a4356"),
             gridcolor="rgba(0,0,0,0.05)",
             zeroline=False,
         ),
     )
     fig.update_yaxes(
-        title_text="累積GEX（億円）",
+        title_text="累積GEX（億円/1%変動）",
         title_font=dict(size=11, color="#4C6FFF"),
         tickfont=dict(size=11, color="#4C6FFF"),
         gridcolor="rgba(76,111,255,0.07)",
