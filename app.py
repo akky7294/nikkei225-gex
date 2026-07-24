@@ -328,12 +328,19 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
     # Tiger Brokers方式: 右端（高ストライク）から左に向かって積み上げる
     agg["agg_gex"] = agg["gex"].iloc[::-1].cumsum().iloc[::-1]
 
-    # ガンマフリップ（累積GEXがゼロ交差する点）
-    gamma_flip = None
+    # ガンマフリップ（青線がゼロを横切る正確な交点）
+    # ・線形補間でゼロ交差位置そのものを求める（ストライクに丸めない）
+    # ・複数交差する場合は現値に最も近い交点を採用
+    crossings = []
     for i in range(1, len(agg)):
-        if agg["agg_gex"].iloc[i - 1] * agg["agg_gex"].iloc[i] < 0:
-            gamma_flip = int(agg["strike"].iloc[i])
-            break
+        a = agg["agg_gex"].iloc[i - 1]
+        b = agg["agg_gex"].iloc[i]
+        if a * b < 0:
+            s0 = agg["strike"].iloc[i - 1]
+            s1 = agg["strike"].iloc[i]
+            x_zero = s0 + (s1 - s0) * (0 - a) / (b - a)
+            crossings.append(x_zero)
+    gamma_flip = min(crossings, key=lambda x: abs(x - spot)) if crossings else None
 
     # プットウォール（最大プットGEX絶対値）
     put_wall_idx = agg["put_gex"].abs().idxmax()
@@ -407,7 +414,7 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
             y=agg["agg_gex"] / unit,
             name="アグリゲートGEX",
             mode="lines",
-            line=dict(color="#6C9FFF", width=2.5, shape="spline", smoothing=0.6),
+            line=dict(color="#6C9FFF", width=2.5),
             hovertemplate="Strike: %{x:,.0f}<br>Aggregate GEX: %{y:.1f} 億円<extra></extra>",
         ),
         secondary_y=True,
