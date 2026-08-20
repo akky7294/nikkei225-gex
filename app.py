@@ -291,7 +291,7 @@ def generate_demo_data(spot: float, today: date) -> pd.DataFrame:
 
 # ─── メインチャート描画 ───────────────────────────────────────────────────────
 
-def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_threshold: int, unit_label: str = "1%"):
+def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_threshold: int, unit_label: str = "1%", r: float = 0.0075):
     """
     Tiger Brokers風GEXチャート:
     - コール(赤バー) / プット(緑バー) を別々に表示
@@ -325,9 +325,37 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
     if agg.empty:
         return None, 0, None, None, None
 
-    # アグリゲートGEX（高ストライク→低ストライク方向に累積）
-    # Tiger Brokers方式: 右端（高ストライク）から左に向かって積み上げる
-    agg["agg_gex"] = agg["gex"].iloc[::-1].cumsum().iloc[::-1]
+    # アグリゲートGEXプロファイル（SpotGamma方式）
+    # 「現値が各価格水準に動いたと仮定したときの総ネットGEX」を水準ごとに再計算する。
+    # 単純な累積和ではガンマの距離依存を無視するため、Net GEXとフリップ位置が矛盾しうる。
+    rows = filtered[
+        (filtered["strike"] >= spot * 0.75) &
+        (filtered["strike"] <= spot * 1.25) &
+        (filtered["oi"] >= oi_threshold)
+    ]
+    K_arr = rows["strike"].to_numpy(dtype=float)
+    iv_arr = np.clip(rows["iv"].to_numpy(dtype=float), 1e-4, None)
+    oi_arr = rows["oi"].to_numpy(dtype=float)
+    sign_arr = np.where(rows["type"].to_numpy() == "call", 1.0, -1.0)
+    if "product" in rows.columns:
+        mult_arr = np.where(rows["product"].to_numpy() == "mini", 100.0, 1000.0)
+    else:
+        mult_arr = np.full(len(rows), 1000.0)
+    today_ts = pd.Timestamp(date.today())
+    T_arr = (pd.to_datetime(rows["expiry"]) - today_ts).dt.days.to_numpy(dtype=float) / 365.0
+    T_arr = np.clip(T_arr, 1.0 / 365.0, None)
+    sqrtT = np.sqrt(T_arr)
+
+    profile = []
+    for S in agg["strike"].to_numpy(dtype=float):
+        d1 = (np.log(S / K_arr) + (r + 0.5 * iv_arr**2) * T_arr) / (iv_arr * sqrtT)
+        gamma_lv = norm.pdf(d1) / (S * iv_arr * sqrtT)
+        base = sign_arr * gamma_lv * oi_arr * mult_arr
+        if unit_label == "1pt":
+            profile.append(np.sum(base * S))          # 1ポイント変動あたり
+        else:
+            profile.append(np.sum(base * S * S * 0.01))  # 1%変動あたり
+    agg["agg_gex"] = profile
 
     # ガンマフリップ（青線がゼロを横切る正確な交点）
     # ・線形補間でゼロ交差位置そのものを求める（ストライクに丸めない）
@@ -795,7 +823,7 @@ def main():
     else:
         unit_label = "1%"
 
-    result = build_gex_chart(gex_df, spot, selected_expiry, oi_threshold, unit_label)
+    result = build_gex_chart(gex_df, spot, selected_expiry, oi_threshold, unit_label, risk_free)
     fig, net_total, gamma_flip, put_wall, call_wall = result
 
     # KPIチップ（1行コンパクト表示）
