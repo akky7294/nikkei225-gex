@@ -149,6 +149,31 @@ def calculate_gex(df: pd.DataFrame, spot: float, r: float = 0.001) -> pd.DataFra
     return pd.DataFrame(records)
 
 
+# ─── マックスペイン計算 ───────────────────────────────────────────────────────
+
+def calc_max_pain(rows: pd.DataFrame):
+    """1限月分のオプションデータから、総ペイアウトが最小になる行使価格を返す"""
+    if rows.empty:
+        return None
+    K = rows["strike"].to_numpy(dtype=float)
+    oi = rows["oi"].to_numpy(dtype=float)
+    is_call = (rows["type"].to_numpy() == "call")
+    if "product" in rows.columns:
+        mult = np.where(rows["product"].to_numpy() == "mini", 100.0, 1000.0)
+    else:
+        mult = np.full(len(rows), 1000.0)
+
+    candidates = np.unique(K)
+    best_strike, best_payout = None, None
+    for S in candidates:
+        call_pay = np.sum(np.where(is_call, oi * mult * np.maximum(0.0, S - K), 0.0))
+        put_pay = np.sum(np.where(~is_call, oi * mult * np.maximum(0.0, K - S), 0.0))
+        total = call_pay + put_pay
+        if best_payout is None or total < best_payout:
+            best_payout, best_strike = total, S
+    return int(best_strike) if best_strike is not None else None
+
+
 # ─── JPX PDF パーサー ─────────────────────────────────────────────────────────
 
 def parse_jpx_pdf(raw: bytes, today: date, spot: float, r: float) -> pd.DataFrame:
@@ -323,7 +348,16 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
     ].sort_values("strike").reset_index(drop=True)
 
     if agg.empty:
-        return None, 0, None, None, None
+        return None, 0, None, None, None, None
+
+    # マックスペイン（満期を1つだけ選んでいるときのみ計算）
+    max_pain = None
+    single_expiry = (
+        selected_expiry != "全満期合算"
+        and (not isinstance(selected_expiry, list) or len(selected_expiry) == 1)
+    )
+    if single_expiry:
+        max_pain = calc_max_pain(filtered)
 
     # アグリゲートGEXプロファイル（SpotGamma方式）
     # 「現値が各価格水準に動いたと仮定したときの総ネットGEX」を水準ごとに再計算する。
@@ -468,6 +502,16 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
         font=dict(color="#3a4356", size=12),
     )
 
+    # ── マックスペイン（ティール点線・満期1つ選択時のみ）──
+    if max_pain:
+        fig.add_vline(x=max_pain, line_width=1.5, line_dash="dot", line_color="#12B5CB")
+        fig.add_annotation(
+            x=max_pain, y=-0.06, yref="paper",
+            text=f"<b>MaxPain {max_pain:,.0f}</b>",
+            showarrow=False,
+            font=dict(color="#12B5CB", size=11),
+        )
+
     # ── コールウォール（矢印付きラベル）──
     cw_y = float(agg.loc[call_wall_idx, "call_gex"]) / unit
     fig.add_annotation(
@@ -546,7 +590,7 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
         secondary_y=True,
     )
 
-    return fig, net_total, gamma_flip, put_wall, call_wall
+    return fig, net_total, gamma_flip, put_wall, call_wall, max_pain
 
 
 # ─── Streamlit UI ─────────────────────────────────────────────────────────────
@@ -666,6 +710,8 @@ def main():
     .chip-flip b { color: #e07c00; }
     .chip-put b { color: #0a8f62; }
     .chip-call b { color: #d63955; }
+    .chip-mp { border-color: #a3e8f0; background: #f0fdfd; }
+    .chip-mp b { color: #0d8fa0; }
 
     /* マルチセレクトをコンパクトに */
     [data-testid="stMultiSelect"] { margin-bottom: 0; }
@@ -824,11 +870,15 @@ def main():
         unit_label = "1%"
 
     result = build_gex_chart(gex_df, spot, selected_expiry, oi_threshold, unit_label, risk_free)
-    fig, net_total, gamma_flip, put_wall, call_wall = result
+    fig, net_total, gamma_flip, put_wall, call_wall, max_pain = result
 
     # KPIチップ（1行コンパクト表示）
     net_cls = "chip-pos" if net_total > 0 else "chip-neg"
     net_label = "Long γ" if net_total > 0 else "Short γ"
+    max_pain_chip = (
+        f'<span class="chip chip-mp"><span class="c-l">MaxPain</span><b>{max_pain:,.0f}</b></span>'
+        if max_pain else ""
+    )
     chips = f'''
     <div class="kpi-bar">
       <span class="chip"><span class="c-l">現値</span><b>{spot:,.0f}</b></span>
@@ -836,9 +886,12 @@ def main():
       <span class="chip chip-flip"><span class="c-l">GFlip</span><b>{f"{gamma_flip:,.0f}" if gamma_flip else "—"}</b></span>
       <span class="chip chip-put"><span class="c-l">P壁</span><b>{f"{put_wall:,.0f}" if put_wall else "—"}</b></span>
       <span class="chip chip-call"><span class="c-l">C壁</span><b>{f"{call_wall:,.0f}" if call_wall else "—"}</b></span>
+      {max_pain_chip}
     </div>
     '''
     st.markdown(chips, unsafe_allow_html=True)
+    if not max_pain:
+        st.caption("💡 マックスペインは満期を1つだけ選択すると表示されます。")
 
     if fig:
         st.plotly_chart(fig, use_container_width=True)
