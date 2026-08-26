@@ -20,7 +20,7 @@ import zipfile
 
 @st.cache_data(ttl=60)  # 1分キャッシュ
 def fetch_nikkei_spot() -> float:
-    """Yahoo FinanceからリアルタイムのNikkei225現値を取得する"""
+    """Yahoo FinanceからリアルタイムのNikkei225現値（現物）を取得する"""
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?interval=1m&range=1d"
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -30,6 +30,25 @@ def fetch_nikkei_spot() -> float:
         return float(price)
     except Exception:
         return None
+
+
+@st.cache_data(ttl=60)  # 1分キャッシュ
+def fetch_nikkei_futures() -> float:
+    """Yahoo Finance経由でCME日経225先物（円建て）の値を取得する。
+    立会時間外や祝日は現物より先物の方が値動きを反映していることが多く、
+    現値との乖離が「データがおかしい」との誤解を招くため併記用に取得する。"""
+    for ticker in ["NIY=F", "NKD=F"]:
+        try:
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            resp = requests.get(url, headers=headers, timeout=5)
+            data = resp.json()
+            price = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
+            if price:
+                return float(price)
+        except Exception:
+            continue
+    return None
 
 
 @st.cache_data(ttl=3600)  # 1時間キャッシュ
@@ -740,10 +759,15 @@ def main():
     with st.sidebar:
         st.header("設定")
 
-        # リアルタイム現値取得
+        # リアルタイム現値取得（現物）＋先物（参考・1行併記）
         live_spot = fetch_nikkei_spot()
+        live_futures = fetch_nikkei_futures()
         if live_spot:
-            st.caption(f"🔴 LIVE: ¥{live_spot:,.0f}（1分ごと更新）")
+            if live_futures:
+                diff = live_futures - live_spot
+                st.caption(f"🔴 現物 ¥{live_spot:,.0f}　/　先物(CME) ¥{live_futures:,.0f}（{'+' if diff>=0 else ''}{diff:,.0f}）")
+            else:
+                st.caption(f"🔴 LIVE: ¥{live_spot:,.0f}（1分ごと更新）")
             default_spot = int(live_spot)
         else:
             st.caption("現値を手動入力してください")
