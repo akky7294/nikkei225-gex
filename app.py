@@ -335,7 +335,7 @@ def generate_demo_data(spot: float, today: date) -> pd.DataFrame:
 
 # ─── メインチャート描画 ───────────────────────────────────────────────────────
 
-def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_threshold: int, unit_label: str = "1%", r: float = 0.0075):
+def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_threshold: int, unit_label: str = "1%", r: float = 0.0075, futures: float = None):
     """
     Tiger Brokers風GEXチャート:
     - コール(赤バー) / プット(緑バー) を別々に表示
@@ -520,6 +520,18 @@ def build_gex_chart(gex_df: pd.DataFrame, spot: float, selected_expiry, oi_thres
         showarrow=False,
         font=dict(color="#3a4356", size=12),
     )
+
+    # ── 先物ライン（紫破線・現値と離れているときだけ表示）──
+    # 現値=前日の現物引値がベース。時間外は先物の方が実勢を反映しているため、
+    # MaxPainや壁との位置関係を先物ベースでも確認できるよう別ラインで併記する。
+    if futures and abs(futures - spot) / spot > 0.0015:
+        fig.add_vline(x=futures, line_width=1.5, line_dash="dash", line_color="#8B5CF6")
+        fig.add_annotation(
+            x=futures, y=1.13, yref="paper",
+            text=f"<b>先物 {futures:,.0f}</b>",
+            showarrow=False,
+            font=dict(color="#8B5CF6", size=11),
+        )
 
     # ── マックスペイン（ティール点線・満期1つ選択時のみ）──
     if max_pain:
@@ -895,7 +907,7 @@ def main():
     else:
         unit_label = "1%"
 
-    result = build_gex_chart(gex_df, spot, selected_expiry, oi_threshold, unit_label, risk_free)
+    result = build_gex_chart(gex_df, spot, selected_expiry, oi_threshold, unit_label, risk_free, live_futures)
     fig, net_total, gamma_flip, put_wall, call_wall, max_pain = result
 
     # KPIチップ（1行コンパクト表示）
