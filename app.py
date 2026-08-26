@@ -731,6 +731,8 @@ def main():
     .chip-call b { color: #d63955; }
     .chip-mp { border-color: #a3e8f0; background: #f0fdfd; }
     .chip-mp b { color: #0d8fa0; }
+    .chip-fut { border-color: #d8d8e8; background: #fafafd; }
+    .chip-fut b { color: #5b5b78; }
 
     /* マルチセレクトをコンパクトに */
     [data-testid="stMultiSelect"] { margin-bottom: 0; }
@@ -903,9 +905,14 @@ def main():
         f'<span class="chip chip-mp"><span class="c-l">MaxPain</span><b>{max_pain:,.0f}</b></span>'
         if max_pain else ""
     )
+    futures_chip = (
+        f'<span class="chip chip-fut"><span class="c-l">先物(CME)</span><b>{live_futures:,.0f}</b></span>'
+        if live_futures else ""
+    )
     chips = f'''
     <div class="kpi-bar">
       <span class="chip"><span class="c-l">現値</span><b>{spot:,.0f}</b></span>
+      {futures_chip}
       <span class="chip {net_cls}"><span class="c-l">Net</span><b>{net_total/1e8:,.0f}億</b><span class="c-l">{net_label}</span></span>
       <span class="chip chip-flip"><span class="c-l">GFlip</span><b>{f"{gamma_flip:,.0f}" if gamma_flip else "—"}</b></span>
       <span class="chip chip-put"><span class="c-l">P壁</span><b>{f"{put_wall:,.0f}" if put_wall else "—"}</b></span>
