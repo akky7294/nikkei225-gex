@@ -1,3 +1,5 @@
 
 input/*.zip
 *.zip
+
+__pycache__/
