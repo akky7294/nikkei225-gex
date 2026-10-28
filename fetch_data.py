@@ -111,11 +111,12 @@ def parse_pdf(raw: bytes, today: date, spot: float = 38500, r: float = 0.001):
                     continue
 
                 oi = 0
-                for token in reversed(rest):
-                    clean = token.replace(",", "")
-                    if re.fullmatch(r"\d+", clean):
-                        oi = int(clean)
-                        break
+                # 建玉は行の最後の列だけを見る。
+                # 建玉が「-」の行で手前の列（清算値段など）を建玉と誤読していたため。
+                if rest:
+                    last = rest[-1].replace(",", "")
+                    if re.fullmatch(r"\d+", last):
+                        oi = int(last)
                 if oi == 0:
                     continue
 

@@ -247,11 +247,12 @@ def parse_jpx_pdf(raw: bytes, today: date, spot: float, r: float) -> pd.DataFram
                     continue
 
                 oi = 0
-                for token in reversed(rest):
-                    clean = token.replace(",", "")
-                    if re.fullmatch(r'\d+', clean):
-                        oi = int(clean)
-                        break
+                # 建玉は行の最後の列だけを見る。
+                # 建玉が「-」の行で手前の列（清算値段など）を建玉と誤読していたため。
+                if rest:
+                    last = rest[-1].replace(",", "")
+                    if re.fullmatch(r'\d+', last):
+                        oi = int(last)
                 if oi == 0:
                     continue
 
@@ -825,6 +826,9 @@ def main():
             csv_path = Path("data/latest.csv")
             if csv_path.exists():
                 options_df = pd.read_csv(csv_path, parse_dates=["expiry"])
+                # 旧パーサーで清算値段を建玉と誤読した行を除外（建玉＝清算値段になっている行）
+                if "settlement" in options_df.columns:
+                    options_df = options_df[options_df["oi"] != options_df["settlement"]]
                 data_date = options_df["date"].iloc[0] if "date" in options_df.columns else "不明"
                 st.success(f"最新データ読み込み済み（{data_date}）")
                 # days_to_expiry を再計算
@@ -863,6 +867,22 @@ def main():
         st.warning("データが読み込まれていません。サイドバーでモードを選択してください。")
         _show_jpx_guide()
         return
+
+    # 対象オプションの切り替え（ミニは乗数×100で計算済み）
+    if "product" in options_df.columns:
+        product_mode = st.radio(
+            "対象オプション",
+            ["合算", "ラージのみ", "ミニのみ"],
+            horizontal=True,
+            help="合算はラージ×1,000・ミニ×100の乗数で補正して足し合わせています。",
+        )
+        if product_mode == "ラージのみ":
+            options_df = options_df[options_df["product"] != "mini"]
+        elif product_mode == "ミニのみ":
+            options_df = options_df[options_df["product"] == "mini"]
+        if options_df.empty:
+            st.warning(f"{product_mode}のデータがありません。")
+            return
 
     # GEX計算
     gex_df = calculate_gex(options_df, spot, risk_free)
